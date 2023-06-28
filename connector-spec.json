@@ -1,0 +1,229 @@
+{
+	"name": "Advanced Policy Framework",
+	"commands": [
+		"std:account:list",
+		"std:account:read",
+		"std:test-connection"
+	],
+	"sourceConfig": [
+		{
+			"type": "menu",
+			"label": "Connection Configuration",
+			"items": [
+				{
+					"type": "section",
+					"sectionTitle": "Authentication",
+					"sectionHelpMessage": "Provide API URL and OAuth2.0 ClientID and ClientSecret to connect to your tenant.",
+					"items": [
+						{
+							"key": "apiUrl",
+							"label": "API URL",
+							"helpText": "https://tenant.api.identitynow.com",
+							"type": "text",
+							"required": true
+						},
+						{
+							"key": "clientId",
+							"label": "OAuth2.0 Client ID",
+							"type": "text",
+							"required": true
+						},
+						{
+							"key": "clientSecret",
+							"label": "OAuth2.0 Client Secret",
+							"type": "secret",
+							"required": true
+						}
+					]
+				},
+				{
+					"type": "section",
+					"sectionTitle": "Sources",
+					"sectionHelpMessage": "Provide the required parameters to read your Policies.",
+					"items": [
+						{
+							"key": "policyConfigSourceName",
+							"label": "Policy Configuration Source Name",
+							"helpText": "The name of the Generic CSV-based source",
+							"type": "text",
+							"required": true
+						},
+						{
+							"key": "policyPolicySourceName",
+							"label": "Policy Results Source Name",
+							"helpText": "The name of this source using the SaaS 2.0 connector",
+							"type": "text",
+							"required": false
+						}
+					]
+				}
+			]
+		},
+		{
+			"type": "menu",
+			"label": "Additional Settings",
+			"items": [
+				{
+					"type": "section",
+					"sectionTitle": "Resolution",
+					"sectionHelpMessage": "Provide the default identity resolution parameters for policy owners and violations managers.",
+					"items": [
+						{
+							"key": "identityResolutionAttribute",
+							"label": "Identity Resolution Attribute",
+							"helpText": "The identity attribute used to resolve Policy Owners and Violation Managers",
+							"type": "select",
+							"options": [
+								{
+									"label": "Account Name",
+									"value": "name"
+								},
+								{
+									"label": "User Name",
+									"value": "uid"
+								},
+								{
+									"label": "Employee Number",
+									"value": "employeeNumber"
+								}
+							]
+						}
+					]
+				},
+				{
+					"type": "section",
+					"sectionTitle": "Scheduling",
+					"sectionHelpMessage": "Provide the default scheduling parameters for policy reports and campaigns.",
+					"items": [
+						{
+							"key": "hourlyScheduleDay",
+							"label": "Daily Schedule Hours",
+							"helpText": "The hours of the day when scheduled tasks will be triggered. Expected Values: [0-23]. Only the first value will be used for scheduled campaigns.",
+							"type": "list"
+						},
+						{
+							"key": "weeklyScheduleDay",
+							"label": "Weekly Schedule Day",
+							"helpText": "The days of the week when weekly scheduled tasks will be triggered. Expected values MON, TUE, WED, THU, FRI, SAT, SUN. Only the first value will be used for scheduled campaigns.",
+							"type": "list"
+						},
+						{
+							"key": "monthlyScheduleDay",
+							"label": "Monthly Schedule Days",
+							"helpText": "The days of the month when monthly scheduled tasks will be triggered. Expected Values: [1-31].  Only the first four value will be used for scheduled campaigns.",
+							"type": "list"
+						},
+						{
+							"key": "campaignDuration",
+							"label": "Policy Campaign Duration",
+							"helpText": "The default time period during which the campaign should be completed. Expected ISO-8601 Format (e.g. P7D, P2W, etc)",
+							"type": "text"
+						}
+					]
+				}
+			]
+		}
+	],
+	"accountSchema": {
+		"displayAttribute": "policyName",
+		"identityAttribute": "policyName",
+		"attributes": [
+			{
+				"name": "policyName",
+				"type": "string",
+				"description": "IdentityNow Policy name"
+			},
+			{
+				"name": "policyQuery",
+				"type": "string",
+				"description": "IdentityNow Policy detection query"
+			},
+			{
+				"name": "leftHandEntitlementCount",
+				"type": "int",
+				"description": "Number of entitlements that match the left hand Policy query"
+			},
+			{
+				"name": "leftHandTotalCount",
+				"type": "int",
+				"description": "Total number of access items that match the left hand Policy query"
+			},
+			{
+				"name": "rightHandEntitlementCount",
+				"type": "int",
+				"description": "Number of entitlements that match the right hand Policy query"
+			},
+			{
+				"name": "rightHandTotalCount",
+				"type": "int",
+				"description": "Total number of access items that match the right hand Policy query"
+			},
+			{
+				"name": "totalCount",
+				"type": "int",
+				"description": "Total number of access items that match the Policy queries"
+			},
+			{
+				"name": "campaignTemplateName",
+				"type": "string",
+				"description": "Name of the Policy Certification Campaign Template"
+			},
+			{
+				"name": "policyConfigured",
+				"type": "boolean",
+				"description": "Was the Policy successfully configured"
+			},
+			{
+				"name": "policyScheduleConfigured",
+				"type": "boolean",
+				"description": "Was the Policy Schedule successfully configured"
+			},
+			{
+				"name": "campaignConfigured",
+				"type": "boolean",
+				"description": "Was the Policy Certification Campaign successfully configured"
+			},
+			{
+				"name": "campaignScheduleConfigured",
+				"type": "boolean",
+				"description": "Was the Policy Certification Campaign Schedule successfully configured"
+			},
+			{
+				"name": "errorMessages",
+				"type": "string",
+				"description": "And errors during policy or campaign configuration"
+			},
+			{
+				"name": "leftHandEntitlements",
+				"type": "string",
+				"description": "Entitlements that match the left hand Policy query"
+			},
+			{
+				"name": "leftHandAccessProfiles",
+				"type": "string",
+				"description": "Access Profiles that match the left hand Policy query"
+			},
+			{
+				"name": "leftHandRoles",
+				"type": "string",
+				"description": "Roles that match the left hand Policy query"
+			},
+			{
+				"name": "rightHandEntitlements",
+				"type": "string",
+				"description": "Entitlements that match the right hand Policy query"
+			},
+			{
+				"name": "rightHandAccessProfiles",
+				"type": "string",
+				"description": "Access Profiles that match the right hand Policy query"
+			},
+			{
+				"name": "rightHandRoles",
+				"type": "string",
+				"description": "Roles that match the right hand Policy query"
+			}
+		]
+	},
+	"entitlementSchemas": []
+}
