@@ -36,7 +36,7 @@ export const connector = async () => {
             
             logger.info(`stdAccountList sent ${accounts.length} accounts`)
             for (const account of accounts) {
-                res.send(account)
+                res.send(await account)
             }
         })
         .stdAccountRead(async (context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {

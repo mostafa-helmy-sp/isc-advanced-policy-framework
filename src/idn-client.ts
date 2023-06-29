@@ -1079,16 +1079,20 @@ export class IdnClient {
             let policyConfig = new PolicyConfig(policyConfigObject)
             // Only Process SOD policies for now
             if (policyConfig.policyType == "SOD") {
-                policyImpls.push(await this.processSodPolicyConfig(policyConfig))
+                policyImpls.push(this.processSodPolicyConfig(policyConfig))
             }
         }
         return policyImpls
     }
 
     async getAccount(identity: string): Promise<any> {
-        const policyConfig = await this.getPolicyConfigByName(identity)
-        if (policyConfig) {
-            return await this.processSodPolicyConfig(policyConfig)
+        const policyConfigObject = await this.getPolicyConfigByName(identity)
+        if (policyConfigObject) {
+            let policyConfig = new PolicyConfig(policyConfigObject)
+            // Only Process SOD policies for now
+            if (policyConfig.policyType == "SOD") {
+                return this.processSodPolicyConfig(policyConfig)
+            }
         }
     }
 
