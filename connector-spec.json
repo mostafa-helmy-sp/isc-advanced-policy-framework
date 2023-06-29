@@ -169,6 +169,11 @@
 				"description": "Name of the Policy Certification Campaign Template"
 			},
 			{
+				"name": "policyDeleted",
+				"type": "boolean",
+				"description": "Was the Policy successfully deleted"
+			},
+			{
 				"name": "policyConfigured",
 				"type": "boolean",
 				"description": "Was the Policy successfully configured"
@@ -177,6 +182,11 @@
 				"name": "policyScheduleConfigured",
 				"type": "boolean",
 				"description": "Was the Policy Schedule successfully configured"
+			},
+			{
+				"name": "campaignDeleted",
+				"type": "boolean",
+				"description": "Was the Policy Certification Campaign successfully deleted"
 			},
 			{
 				"name": "campaignConfigured",

@@ -4,6 +4,7 @@ export class PolicyConfig {
     policyDescription?: string
     policyOwnerType: string
     policyOwner: string
+    policyState: boolean
     externalReference?: string
     tags: string[]
     query1Name: string
@@ -26,6 +27,11 @@ export class PolicyConfig {
         this.policyDescription = object.attributes.PolicyDescription
         this.policyOwnerType = object.attributes.PolicyOwnerType
         this.policyOwner = object.attributes.PolicyOwner
+        if (object.attributes.PolicyEnabled.toLocaleLowerCase() == "true" || object.attributes.PolicyEnabled.toLocaleLowerCase() == "yes") {
+            this.policyState = true
+        } else {
+            this.policyState = false
+        }
         this.externalReference = object.attributes.ExternalReference
         if (object.attributes.Tags) {
             this.tags = object.attributes.Tags.split(",")

@@ -26,7 +26,10 @@ import {
     CampaignTemplateBeta,
     CertificationCampaignsBetaApiCreateCampaignTemplateRequest,
     CertificationCampaignsBetaApiUpdateCampaignRequest,
-    CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest
+    CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest,
+    CertificationCampaignsBetaApiDeleteCampaignTemplateRequest,
+    SODPolicyBetaApiDeleteSodPolicyRequest,
+    SodPolicyBetaStateEnum
 } from "sailpoint-api-client"
 import { PolicyConfig } from "./model/policy-config"
 import { PolicyImpl } from "./model/policy-impl"
@@ -45,6 +48,12 @@ var defaultHourlyScheduleDay = ["9"]
 var defaultWeeklyScheduleDay = ["MON"]
 var defaultMonthlyScheduleDay = ["1"]
 var defaultCampaignDuration = "P2W"
+
+// Set Connector Values
+var actionSchedulePolicy = "REPORT"
+var actionCertifyViolations = "CERTIFY"
+var actionDeletePolicy = "DELETE_POLICY"
+var actionDeleteCampaign = "DELETE_CAMPAIGN"
 
 export class IdnClient {
 
@@ -128,7 +137,7 @@ export class IdnClient {
                     this.policyConfigSourceId = sources.data[0].id
                 }
             } catch (err) {
-                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API with request: ${JSON.stringify(sourcesRequest)}`
+                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API ${JSON.stringify(err)} with request: ${JSON.stringify(sourcesRequest)}`
                 logger.error(errorMessage, err)
                 throw new ConnectorError(errorMessage)
             }
@@ -152,7 +161,7 @@ export class IdnClient {
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data
         } catch (err) {
-            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API with request: ${JSON.stringify(accountsRequest)}`
+            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API ${JSON.stringify(err)} with request: ${JSON.stringify(accountsRequest)}`
             logger.error(errorMessage, err)
             throw new ConnectorError(errorMessage)
         }
@@ -172,7 +181,7 @@ export class IdnClient {
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data[0]
         } catch (err) {
-            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API with request: ${JSON.stringify(accountsRequest)}`
+            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API ${JSON.stringify(err)} with request: ${JSON.stringify(accountsRequest)}`
             logger.error(errorMessage, err)
             throw new ConnectorError(errorMessage)
         }
@@ -193,7 +202,7 @@ export class IdnClient {
                 return existingPolicy.data[0]
             }
         } catch (err) {
-            let errorMessage = `Error finding existing Policy using SOD-Policies API with request: ${JSON.stringify(findPolicyRequest)}`
+            let errorMessage = `Error finding existing Policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(findPolicyRequest)}`
             logger.error(errorMessage, err)
             return {}
         }
@@ -214,7 +223,7 @@ export class IdnClient {
                 return existingCampaign.data[0]
             }
         } catch (err) {
-            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API with request: ${JSON.stringify(findCampaignRequest)}`
+            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(findCampaignRequest)}`
             logger.error(errorMessage, err)
             return {}
         }
@@ -278,7 +287,7 @@ export class IdnClient {
             const entitlements = await Paginator.paginateSearchApi(searchApi, search)
             return entitlements.data
         } catch (err) {
-            let errorMessage = `Error finding entitlements using Search API with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding entitlements using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
             return []
         }
@@ -308,7 +317,7 @@ export class IdnClient {
             const accessProfiles = await Paginator.paginateSearchApi(searchApi, search)
             return accessProfiles.data
         } catch (err) {
-            let errorMessage = `Error finding access profiles using Search API with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding access profiles using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
             return []
         }
@@ -337,7 +346,7 @@ export class IdnClient {
             const roles = await Paginator.paginateSearchApi(searchApi, search)
             return roles.data
         } catch (err) {
-            let errorMessage = `Error finding roles using Search API with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding roles using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
             return []
         }
@@ -378,7 +387,7 @@ export class IdnClient {
                 return { "id": identity.id, "name": identity.name, "type": identity._type.toUpperCase() }
             }
         } catch (err) {
-            let errorMessage = `Error finding identity using Search API with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding identity using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
             return
         }
@@ -401,7 +410,7 @@ export class IdnClient {
                 return { "id": govGroup.id, "name": govGroup.name, "type": "GOVERNANCE_GROUP" }
             }
         } catch (err) {
-            let errorMessage = `Error finding Governance Group using Governance-Groups API with request: ${JSON.stringify(findGovGroupRequest)}`
+            let errorMessage = `Error finding Governance Group using Governance-Groups API ${JSON.stringify(err)} with request: ${JSON.stringify(findGovGroupRequest)}`
             logger.error(errorMessage, err)
             return
         }
@@ -424,7 +433,7 @@ export class IdnClient {
                 return members
             }
         } catch (err) {
-            let errorMessage = `Error finding Governance Group members using Governance-Groups API with request: ${JSON.stringify(findGovGroupMembersRequest)}`
+            let errorMessage = `Error finding Governance Group members using Governance-Groups API ${JSON.stringify(err)} with request: ${JSON.stringify(findGovGroupMembersRequest)}`
             logger.error(errorMessage, err)
             return []
         }
@@ -595,10 +604,27 @@ export class IdnClient {
         return recipients
     }
 
+    async deletePolicy(policyId: string): Promise<string> {
+        let errorMessage = ""
+        // Delete the Policy via API
+        const policyApi = new SODPolicyBetaApi(this.apiConfig)
+        const deletePolicyRequest: SODPolicyBetaApiDeleteSodPolicyRequest = {
+            id: policyId
+        }
+        try {
+            await policyApi.deleteSodPolicy(deletePolicyRequest)
+        } catch (err) {
+            errorMessage = `Error deleting existing policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(deletePolicyRequest)}`
+            logger.error(errorMessage, err)
+        }
+        return errorMessage
+    }
+
     async createPolicy(policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyId: string, policyQuery: string]> {
         let errorMessage = ""
         let policyId = ""
         let policyQuery = ""
+        let policyState = policyConfig.policyState ? SodPolicyBetaStateEnum.Enforced : SodPolicyBetaStateEnum.NotEnforced
         // Submit the new Policy via API
         const policyApi = new SODPolicyBetaApi(this.apiConfig)
         const newPolicyRequest: SODPolicyBetaApiCreateSodPolicyRequest = {
@@ -609,7 +635,7 @@ export class IdnClient {
                 externalPolicyReference: policyConfig.externalReference,
                 compensatingControls: policyConfig.mitigatingControls,
                 correctionAdvice: policyConfig.correctionAdvice,
-                state: "ENFORCED",
+                state: policyState,
                 tags: policyConfig.tags,
                 violationOwnerAssignmentConfig: violationOwner,
                 type: "CONFLICTING_ACCESS_BASED",
@@ -625,7 +651,7 @@ export class IdnClient {
                 policyQuery = newPolicy.data.policyQuery
             }
         } catch (err) {
-            errorMessage = `Error creating a new Policy using SOD-Policies API with request: ${JSON.stringify(newPolicyRequest)}`
+            errorMessage = `Error creating a new Policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(newPolicyRequest)}`
             logger.error(errorMessage, err)
         }
         return [errorMessage, policyId, policyQuery]
@@ -634,6 +660,7 @@ export class IdnClient {
     async updatePolicy(existingPolicyId: string, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyQuery: string]> {
         let errorMessage = ""
         let policyQuery = ""
+        let policyState = policyConfig.policyState ? SodPolicyBetaStateEnum.Enforced : SodPolicyBetaStateEnum.NotEnforced
         // Submit the patch Policy via API
         const policyApi = new SODPolicyBetaApi(this.apiConfig)
         const patchPolicyRequest: SODPolicyBetaApiPatchSodPolicyRequest = {
@@ -671,6 +698,11 @@ export class IdnClient {
                 },
                 {
                     "op": "replace",
+                    "path": "/state",
+                    "value": policyState
+                },
+                {
+                    "op": "replace",
                     "path": "/tags",
                     "value": policyConfig.tags
                 },
@@ -692,7 +724,7 @@ export class IdnClient {
                 policyQuery = patchedPolicy.data.policyQuery
             }
         } catch (err) {
-            errorMessage = `Error updating existing Policy using SOD-Policies API with request: ${JSON.stringify(patchPolicyRequest)}`
+            errorMessage = `Error updating existing Policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(patchPolicyRequest)}`
             logger.error(errorMessage, err)
         }
         return [errorMessage, policyQuery]
@@ -714,7 +746,23 @@ export class IdnClient {
         try {
             const newPolicySchedule = await policyApi.updatePolicySchedule(setPolicyScheduleRequest)
         } catch (err) {
-            errorMessage = `Error setting Policy Schedule using SOD-Policies API with request: ${JSON.stringify(setPolicyScheduleRequest)}`
+            errorMessage = `Error setting Policy Schedule using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(setPolicyScheduleRequest)}`
+            logger.error(errorMessage, err)
+        }
+        return errorMessage
+    }
+
+    async deletePolicyCampaign(campaignId: string): Promise<string> {
+        let errorMessage = ""
+        // Delete the Campaign via API
+        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
+        const deleteCampaignTemplareRequest: CertificationCampaignsBetaApiDeleteCampaignTemplateRequest = {
+            id: campaignId
+        }
+        try {
+            await certsApi.deleteCampaignTemplate(deleteCampaignTemplareRequest)
+        } catch (err) {
+            errorMessage = `Error deleting existing campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(deleteCampaignTemplareRequest)}`
             logger.error(errorMessage, err)
         }
         return errorMessage
@@ -760,7 +808,7 @@ export class IdnClient {
                 campaignId = newCampaign.data.id
             }
         } catch (err) {
-            errorMessage = `Error creating new Campaign using Certification-Campaigns API with request: ${JSON.stringify(createCampaignRequest)}`
+            errorMessage = `Error creating new Campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(createCampaignRequest)}`
             logger.error(errorMessage, err)
         }
         return [errorMessage, campaignId]
@@ -827,7 +875,7 @@ export class IdnClient {
         try {
             const newCampaign = await certsApi.patchCampaignTemplate(patchCampaignRequest)
         } catch (err) {
-            errorMessage = `Error updating existing Campaign using Certification-Campaigns API with request: ${JSON.stringify(patchCampaignRequest)}`
+            errorMessage = `Error updating existing Campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(patchCampaignRequest)}`
             logger.error(errorMessage, err)
         }
         return errorMessage
@@ -844,7 +892,7 @@ export class IdnClient {
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
         } catch (err) {
-            errorMessage = `Error setting campaign schedule using Certification-Campaigns API with request: ${JSON.stringify(setCampaignScheduleRequest)}`
+            errorMessage = `Error setting campaign schedule using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(setCampaignScheduleRequest)}`
             logger.error(errorMessage, err)
         }
         return errorMessage
@@ -853,178 +901,93 @@ export class IdnClient {
     async processSodPolicyConfig(policyConfig: PolicyConfig): Promise<PolicyImpl> {
         logger.info(`### Processing policy [${policyConfig.policyName}] ###`)
 
-        // Find LeftHand & RightHand Entitlements using the Search API
-        const query1Entitlemnts = await this.searchEntitlementsByQuery(policyConfig.query1)
-        const query2Entitlemnts = await this.searchEntitlementsByQuery(policyConfig.query2)
-
         // Create Policy Implementation object
         let canProcess = true
         let errorMessages = []
         let policyImpl = new PolicyImpl(policyConfig.policyName)
-        policyImpl.attributes.leftHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query1Entitlemnts))
-        policyImpl.attributes.rightHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query2Entitlemnts))
-        policyImpl.attributes.leftHandEntitlementCount = query1Entitlemnts.length
-        policyImpl.attributes.rightHandEntitlementCount = query2Entitlemnts.length
 
-        // Check if either side of the query exceeds the IdentityNow limits
-        if (query1Entitlemnts.length == 0) {
-            canProcess = false
-            errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] returns no entitlements`)
-        }
-        if (query2Entitlemnts.length == 0) {
-            canProcess = false
-            errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] returns no entitlements`)
-        }
-
-        // Check if either side of the query exceeds the IdentityNow limits
-        if (query1Entitlemnts.length > maxEntitlementsPerPolicySide) {
-            canProcess = false
-            errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] result exceeds IdentityNow limit of ${maxEntitlementsPerPolicySide} entitlements`)
-        }
-        if (query2Entitlemnts.length > maxEntitlementsPerPolicySide) {
-            canProcess = false
-            errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] result exceeds IdentityNow limit of ${maxEntitlementsPerPolicySide} entitlements`)
-        }
-
-        // Prepare Policy Owner refereneces
-        const policyOwner = await this.resolvePolicyOwner(policyConfig)
-        // Error if Policy Owner cannot be resolved/found
-        if (!policyOwner) {
-            canProcess = false
-            errorMessages.push(`Unable to resolve Policy Owner. Type: ${policyConfig.policyOwnerType}, Value: ${policyConfig.policyOwner}`)
-        }
-
-        // Prepare Violation Owner refereneces
-        const violationOwner = await this.resolveViolationOwner(policyConfig)
-        // Error if Violation Owner cannot be resolved/found
-        if (!violationOwner && policyConfig.violationOwnerType != "MANAGER") {
-            canProcess = false
-            errorMessages.push(`Unable to resolve Violation Manager. Type: ${policyConfig.violationOwnerType}, Value: ${policyConfig.violationOwner}`)
-        }
-
-        // Build the Conflicting Access Criteria
-        const conflictingAccessCriteria = this.buildPolicyConflictingAccessCriteria(policyConfig, query1Entitlemnts, query2Entitlemnts)
-
+        // Create common variables
         let errorMessage = ""
         let policyId = ""
         let policyQuery = ""
-        // Create or Update an existing policy only if the canProcess flag is true
-        if (canProcess) {
+
+        if (policyConfig.actions.includes(actionDeletePolicy)) {
             // Check if policy already exists
-            const violationOwnerAssignmentConfig = this.buildviolationOwnerAssignmentConfig(violationOwner)
             const existingPolicy = await this.findExistingPolicy(policyConfig)
             if (existingPolicy && existingPolicy.id) {
-                [errorMessage, policyQuery] = await this.updatePolicy(existingPolicy.id, policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
-                policyId = existingPolicy.id
-            } else {
-                // Create a new Policy
-                [errorMessage, policyId, policyQuery] = await this.createPolicy(policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
-            }
-            // Stop processing if any errors come up
-            if (errorMessage) {
-                errorMessages.push(errorMessage)
-                policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
-                return policyImpl
-            }
-            // Stop processing if no policy id returned
-            if (!policyId) {
-                errorMessages.push(`No policy Id returned while processing the policy?`)
-                policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
-                return policyImpl
-            }
-            // Stop processing if no policy id returned
-            if (!policyQuery) {
-                errorMessages.push(`No policyQuery Id returned while processing the policy?`)
-                policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
-                return policyImpl
-            }
-            policyImpl.attributes.policyQuery = policyQuery
-            // Set policyConfigured flag to true
-            policyImpl.attributes.policyConfigured = true
-        } else {
-            policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
-            return policyImpl
-        }
-
-        // Configure the Policy Schedule if required
-        if (policyConfig.actions.includes("REPORT")) {
-            const policySchedule = this.buildPolicySchedule(policyConfig.policySchedule)
-            if (policySchedule) {
-                const policyRecipients = await this.resolvePolicyRecipients(policyConfig, violationOwner, policyOwner)
-                errorMessage = await this.setPolicySchedule(policyId, policyConfig, policySchedule, policyRecipients)
+                // Delete existing policy
+                errorMessage = await this.deletePolicy(existingPolicy.id)
                 // Update Policy Impl Object with any error messages
                 if (errorMessage) {
                     errorMessages.push(errorMessage)
                 } else {
                     // Set policyScheduleConfigured flag to true
-                    policyImpl.attributes.policyScheduleConfigured = true
+                    policyImpl.attributes.policyDeleted = true
                 }
             } else {
-                errorMessages.push(`Unable to build policy schedule using schedule [${policyConfig.policySchedule}]`)
+                errorMessages.push(`No Policy found by name [${policyConfig.certificationName}] to delete.`)
             }
-        }
 
-        // Calculate additional Policy Metrics
-        // Find LeftHand & RightHand AccessProfiles using the Search API
-        const query1AccessProfiles = await this.searchAccessProfilesbyEntitlements(query1Entitlemnts)
-        const query2AccessProfiles = await this.searchAccessProfilesbyEntitlements(query2Entitlemnts)
+        } else {
+            // Find LeftHand & RightHand Entitlements using the Search API
+            const query1Entitlemnts = await this.searchEntitlementsByQuery(policyConfig.query1)
+            const query2Entitlemnts = await this.searchEntitlementsByQuery(policyConfig.query2)
 
-        // Find LeftHand & RightHand Roles using the Search API
-        const query1Roles = await this.searchRolesByAccessProfiles(query1AccessProfiles)
-        const query2Roles = await this.searchRolesByAccessProfiles(query2AccessProfiles)
+            policyImpl.attributes.leftHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query1Entitlemnts))
+            policyImpl.attributes.rightHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query2Entitlemnts))
+            policyImpl.attributes.leftHandEntitlementCount = query1Entitlemnts.length
+            policyImpl.attributes.rightHandEntitlementCount = query2Entitlemnts.length
 
-        // Build AccessProfile and Role Name lists
-        const leftHandAccessProfiles = this.buildNameArray(query1AccessProfiles)
-        const rightHandAccessProfiles = this.buildNameArray(query2AccessProfiles)
-        const leftHandRoles = this.buildNameArray(query1Roles)
-        const rightHandRoles = this.buildNameArray(query2Roles)
-
-        // Build campaign access constrains and calculate policy campaign metrics
-        let [accessConstraints, leftHandTotalCount, rightHandTotalCount, totalCount] = this.buildCampaignAccsesConstraints(query1Entitlemnts, query2Entitlemnts, query1AccessProfiles, query2AccessProfiles, query1Roles, query2Roles)
-
-        // Update the Policy Impl object
-        policyImpl.attributes.leftHandAccessProfiles = JSON.stringify(leftHandAccessProfiles)
-        policyImpl.attributes.rightHandAccessProfiles = JSON.stringify(rightHandAccessProfiles)
-        policyImpl.attributes.leftHandRoles = JSON.stringify(leftHandRoles)
-        policyImpl.attributes.rightHandRoles = JSON.stringify(rightHandRoles)
-        policyImpl.attributes.leftHandTotalCount = leftHandTotalCount
-        policyImpl.attributes.rightHandTotalCount = rightHandTotalCount
-        policyImpl.attributes.totalCount = totalCount
-
-        // Configure the Policy Campaign if required
-        if (policyConfig.actions.includes("CERTIFY")) {
-            // Reset canProcess flag
-            canProcess = true
-            let campaignId = ""
-
-            // Ensure the total number of access items did not exceed IdentityNow limits
-            if (totalCount > maxAccessItemsPerCampaign) {
+            // Check if either side of the query exceeds the IdentityNow limits
+            if (query1Entitlemnts.length == 0) {
                 canProcess = false
-                errorMessages.push(`Total number of access items to review exceeds IdentityNow limit of ${maxAccessItemsPerCampaign} access items.`)
+                errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] returns no entitlements`)
+            }
+            if (query2Entitlemnts.length == 0) {
+                canProcess = false
+                errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] returns no entitlements`)
             }
 
-            // Ensure a proper certification campaign name and description have been provided
-            if (!policyConfig.certificationName) {
+            // Check if either side of the query exceeds the IdentityNow limits
+            if (query1Entitlemnts.length > maxEntitlementsPerPolicySide) {
                 canProcess = false
-                errorMessages.push(`A Certification Campaign Name is required to define a Certification Campaign.`)
+                errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] result exceeds IdentityNow limit of ${maxEntitlementsPerPolicySide} entitlements`)
             }
-            if (!policyConfig.certificationDescription) {
+            if (query2Entitlemnts.length > maxEntitlementsPerPolicySide) {
                 canProcess = false
-                errorMessages.push(`A Certification Campaign Description is required to define a Certification Campaign.`)
+                errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] result exceeds IdentityNow limit of ${maxEntitlementsPerPolicySide} entitlements`)
             }
 
-            // Create or Update an existing campaign only if the canProcess flag is true
+            // Prepare Policy Owner refereneces
+            const policyOwner = await this.resolvePolicyOwner(policyConfig)
+            // Error if Policy Owner cannot be resolved/found
+            if (!policyOwner) {
+                canProcess = false
+                errorMessages.push(`Unable to resolve Policy Owner. Type: ${policyConfig.policyOwnerType}, Value: ${policyConfig.policyOwner}`)
+            }
+
+            // Prepare Violation Owner refereneces
+            const violationOwner = await this.resolveViolationOwner(policyConfig)
+            // Error if Violation Owner cannot be resolved/found
+            if (!violationOwner && policyConfig.violationOwnerType != "MANAGER") {
+                canProcess = false
+                errorMessages.push(`Unable to resolve Violation Manager. Type: ${policyConfig.violationOwnerType}, Value: ${policyConfig.violationOwner}`)
+            }
+
+            // Build the Conflicting Access Criteria
+            const conflictingAccessCriteria = this.buildPolicyConflictingAccessCriteria(policyConfig, query1Entitlemnts, query2Entitlemnts)
+
+            // Create or Update an existing policy only if the canProcess flag is true
             if (canProcess) {
-                // Check if Campaign already exists
-                const existingCampaign = await this.findExistingCampaign(policyConfig)
-
-                if (existingCampaign && existingCampaign.id) {
-                    // Update existing campaign
-                    errorMessage = await this.updatePolicyCampaign(existingCampaign.id, policyConfig, policyQuery, accessConstraints, violationOwner)
-                    campaignId = existingCampaign.id
+                // Check if policy already exists
+                const violationOwnerAssignmentConfig = this.buildviolationOwnerAssignmentConfig(violationOwner)
+                const existingPolicy = await this.findExistingPolicy(policyConfig)
+                if (existingPolicy && existingPolicy.id) {
+                    [errorMessage, policyQuery] = await this.updatePolicy(existingPolicy.id, policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
+                    policyId = existingPolicy.id
                 } else {
-                    // Create a new campaign
-                    [errorMessage, campaignId] = await this.createPolicyCampaign(policyConfig, policyQuery, accessConstraints, violationOwner, null)
+                    // Create a new Policy
+                    [errorMessage, policyId, policyQuery] = await this.createPolicy(policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
                 }
                 // Stop processing if any errors come up
                 if (errorMessage) {
@@ -1033,36 +996,177 @@ export class IdnClient {
                     return policyImpl
                 }
                 // Stop processing if no policy id returned
-                if (!campaignId) {
-                    errorMessages.push(`No campaign Id returned while processing the policy?`)
+                if (!policyId) {
+                    errorMessages.push(`No policy Id returned while processing the policy?`)
                     policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
                     return policyImpl
                 }
-                // Set campaignConfigured flag to true
-                policyImpl.attributes.campaignConfigured = true
-                policyImpl.attributes.certificationName = policyConfig.certificationName
+                // Stop processing if no policy id returned
+                if (!policyQuery) {
+                    errorMessages.push(`No policyQuery Id returned while processing the policy?`)
+                    policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
+                    return policyImpl
+                }
+                policyImpl.attributes.policyQuery = policyQuery
+                // Set policyConfigured flag to true
+                policyImpl.attributes.policyConfigured = true
             } else {
                 policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
                 return policyImpl
             }
 
-            // Configure the Campaign Schedule if required
-            if (policyConfig.certificationSchedule) {
-                const campaignSchedule = this.buildCampaignSchedule(policyConfig.certificationSchedule)
-                if (campaignSchedule) {
-                    errorMessage = await this.setCampaignSchedule(campaignId, campaignSchedule)
+            // Configure the Policy Schedule if required
+            if (policyConfig.actions.includes(actionSchedulePolicy)) {
+                const policySchedule = this.buildPolicySchedule(policyConfig.policySchedule)
+                if (policySchedule) {
+                    const policyRecipients = await this.resolvePolicyRecipients(policyConfig, violationOwner, policyOwner)
+                    errorMessage = await this.setPolicySchedule(policyId, policyConfig, policySchedule, policyRecipients)
                     // Update Policy Impl Object with any error messages
                     if (errorMessage) {
                         errorMessages.push(errorMessage)
                     } else {
-                        // Set campaignScheduleConfigured flag to true
-                        policyImpl.attributes.campaignScheduleConfigured = true
+                        // Set policyScheduleConfigured flag to true
+                        policyImpl.attributes.policyScheduleConfigured = true
                     }
                 } else {
-                    errorMessages.push(`Unable to build campaign schedule using schedule [${policyConfig.certificationSchedule}]`)
+                    errorMessages.push(`Unable to build policy schedule using schedule [${policyConfig.policySchedule}]`)
+                }
+            }
+
+            // Calculate additional Policy Metrics
+            // Find LeftHand & RightHand AccessProfiles using the Search API
+            const query1AccessProfiles = await this.searchAccessProfilesbyEntitlements(query1Entitlemnts)
+            const query2AccessProfiles = await this.searchAccessProfilesbyEntitlements(query2Entitlemnts)
+
+            // Find LeftHand & RightHand Roles using the Search API
+            const query1Roles = await this.searchRolesByAccessProfiles(query1AccessProfiles)
+            const query2Roles = await this.searchRolesByAccessProfiles(query2AccessProfiles)
+
+            // Build AccessProfile and Role Name lists
+            const leftHandAccessProfiles = this.buildNameArray(query1AccessProfiles)
+            const rightHandAccessProfiles = this.buildNameArray(query2AccessProfiles)
+            const leftHandRoles = this.buildNameArray(query1Roles)
+            const rightHandRoles = this.buildNameArray(query2Roles)
+
+            // Build campaign access constrains and calculate policy campaign metrics
+            let [accessConstraints, leftHandTotalCount, rightHandTotalCount, totalCount] = this.buildCampaignAccsesConstraints(query1Entitlemnts, query2Entitlemnts, query1AccessProfiles, query2AccessProfiles, query1Roles, query2Roles)
+
+            // Update the Policy Impl object
+            policyImpl.attributes.leftHandAccessProfiles = JSON.stringify(leftHandAccessProfiles)
+            policyImpl.attributes.rightHandAccessProfiles = JSON.stringify(rightHandAccessProfiles)
+            policyImpl.attributes.leftHandRoles = JSON.stringify(leftHandRoles)
+            policyImpl.attributes.rightHandRoles = JSON.stringify(rightHandRoles)
+            policyImpl.attributes.leftHandTotalCount = leftHandTotalCount
+            policyImpl.attributes.rightHandTotalCount = rightHandTotalCount
+            policyImpl.attributes.totalCount = totalCount
+
+            // Configure the Policy Campaign if required
+            if (policyConfig.actions.includes(actionCertifyViolations) && !policyConfig.actions.includes(actionDeleteCampaign)) {
+                // Reset canProcess flag
+                canProcess = true
+                let campaignId = ""
+
+                // Ensure the total number of access items did not exceed IdentityNow limits
+                if (totalCount > maxAccessItemsPerCampaign) {
+                    canProcess = false
+                    errorMessages.push(`Total number of access items to review exceeds IdentityNow limit of ${maxAccessItemsPerCampaign} access items.`)
+                }
+
+                // Ensure a proper certification campaign name and description have been provided
+                if (!policyConfig.certificationName) {
+                    canProcess = false
+                    errorMessages.push(`A Certification Campaign Name is required to define a Certification Campaign.`)
+                }
+                if (!policyConfig.certificationDescription) {
+                    canProcess = false
+                    errorMessages.push(`A Certification Campaign Description is required to define a Certification Campaign.`)
+                }
+
+                // Create or Update an existing campaign only if the canProcess flag is true
+                if (canProcess) {
+                    // Check if Campaign already exists
+                    const existingCampaign = await this.findExistingCampaign(policyConfig)
+
+                    if (existingCampaign && existingCampaign.id) {
+                        // Update existing campaign
+                        errorMessage = await this.updatePolicyCampaign(existingCampaign.id, policyConfig, policyQuery, accessConstraints, violationOwner)
+                        campaignId = existingCampaign.id
+                    } else {
+                        // Create a new campaign
+                        [errorMessage, campaignId] = await this.createPolicyCampaign(policyConfig, policyQuery, accessConstraints, violationOwner, null)
+                    }
+                    // Stop processing if any errors come up
+                    if (errorMessage) {
+                        errorMessages.push(errorMessage)
+                        policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
+                        return policyImpl
+                    }
+                    // Stop processing if no policy id returned
+                    if (!campaignId) {
+                        errorMessages.push(`No campaign Id returned while processing the policy?`)
+                        policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
+                        return policyImpl
+                    }
+                    // Set campaignConfigured flag to true
+                    policyImpl.attributes.campaignConfigured = true
+                    policyImpl.attributes.certificationName = policyConfig.certificationName
+                } else {
+                    policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
+                    return policyImpl
+                }
+
+                // Configure the Campaign Schedule if required
+                if (policyConfig.certificationSchedule) {
+                    const campaignSchedule = this.buildCampaignSchedule(policyConfig.certificationSchedule)
+                    if (campaignSchedule) {
+                        errorMessage = await this.setCampaignSchedule(campaignId, campaignSchedule)
+                        // Update Policy Impl Object with any error messages
+                        if (errorMessage) {
+                            errorMessages.push(errorMessage)
+                        } else {
+                            // Set campaignScheduleConfigured flag to true
+                            policyImpl.attributes.campaignScheduleConfigured = true
+                        }
+                    } else {
+                        errorMessages.push(`Unable to build campaign schedule using schedule [${policyConfig.certificationSchedule}]`)
+                    }
                 }
             }
         }
+
+        // Delete the Policy Campaign if required
+        if (policyConfig.actions.includes(actionDeleteCampaign) || policyConfig.actions.includes(actionDeletePolicy)) {
+            // Reset canProcess flag
+            canProcess = true
+            errorMessage = ""
+
+            // Ensure a proper certification campaign name has been provided
+            if (!policyConfig.certificationName) {
+                canProcess = false
+                errorMessages.push(`A Certification Campaign Name is required to delete it.`)
+            }
+
+            // Delete existing campaign only if the canProcess flag is true
+            if (canProcess) {
+                // Check if Campaign already exists
+                const existingCampaign = await this.findExistingCampaign(policyConfig)
+
+                if (existingCampaign && existingCampaign.id) {
+                    // Delete existing campaign
+                    errorMessage = await this.deletePolicyCampaign(existingCampaign.id)
+                    // Update Policy Impl Object with any error messages
+                    if (errorMessage) {
+                        errorMessages.push(errorMessage)
+                    } else {
+                        // Set policyScheduleConfigured flag to true
+                        policyImpl.attributes.campaignDeleted = true
+                    }
+                } else {
+                    errorMessages.push(`No Certification Campaign found by name [${policyConfig.certificationName}] to delete.`)
+                }
+            }
+        }
+
 
         logger.info(`### Finished processing policy [${policyConfig.policyName}] ###`)
 
