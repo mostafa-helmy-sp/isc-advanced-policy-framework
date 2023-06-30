@@ -52,7 +52,7 @@ var defaultCampaignDuration = "P2W"
 // Set Connector Values
 var actionSchedulePolicy = "REPORT"
 var actionCertifyViolations = "CERTIFY"
-var actionDeletePolicy = "DELETE_POLICY"
+var actionDeleteAll = "DELETE_ALL"
 var actionDeleteCampaign = "DELETE_CAMPAIGN"
 
 export class IdnClient {
@@ -911,7 +911,7 @@ export class IdnClient {
         let policyId = ""
         let policyQuery = ""
 
-        if (policyConfig.actions.includes(actionDeletePolicy)) {
+        if (policyConfig.actions.includes(actionDeleteAll)) {
             // Check if policy already exists
             const existingPolicy = await this.findExistingPolicy(policyConfig)
             if (existingPolicy && existingPolicy.id) {
@@ -1135,7 +1135,7 @@ export class IdnClient {
         }
 
         // Delete the Policy Campaign if required
-        if (policyConfig.actions.includes(actionDeleteCampaign) || policyConfig.actions.includes(actionDeletePolicy)) {
+        if (policyConfig.actions.includes(actionDeleteCampaign) || policyConfig.actions.includes(actionDeleteAll)) {
             // Reset canProcess flag
             canProcess = true
             errorMessage = ""
