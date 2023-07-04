@@ -46,7 +46,7 @@ export class PolicyConfig {
         this.violationOwner = object.attributes.ViolationOwner
         this.mitigatingControls = object.attributes.MitigatingControls
         this.correctionAdvice = object.attributes.CorrectionAdvice
-        if (object.attributes.Tags) {
+        if (object.attributes.Actions) {
             this.actions = object.attributes.Actions.split(",")
         } else {
             this.actions = []
