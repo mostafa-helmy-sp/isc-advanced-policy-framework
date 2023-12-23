@@ -1,6 +1,6 @@
 {
-  "name": "AdvancedPolicyFramework",
-  "version": "0.2.0",
+  "name": "advanced-policy-framework",
+  "version": "0.3.0",
   "main": "dist/index.js",
   "scripts": {
     "clean": "shx rm -rf ./dist",

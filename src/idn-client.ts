@@ -10,26 +10,26 @@ import {
     AccountsApi,
     AccountsApiListAccountsRequest,
     SearchApi,
-    SODPolicyBetaApi,
-    SODPolicyBetaApiCreateSodPolicyRequest,
-    SODPolicyBetaApiListSodPoliciesRequest,
     Search,
     Paginator,
-    GovernanceGroupsV2Api,
-    GovernanceGroupsV2ApiListWorkgroupsRequest,
-    SodPolicyBeta,
-    SODPolicyBetaApiPatchSodPolicyRequest,
-    SODPolicyBetaApiUpdatePolicyScheduleRequest,
-    GovernanceGroupsV2ApiListWorkgroupMembersRequest,
-    CertificationCampaignsBetaApi,
-    CertificationCampaignsBetaApiListCampaignTemplatesRequest,
-    CampaignTemplateBeta,
-    CertificationCampaignsBetaApiCreateCampaignTemplateRequest,
-    CertificationCampaignsBetaApiUpdateCampaignRequest,
-    CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest,
-    CertificationCampaignsBetaApiDeleteCampaignTemplateRequest,
-    SODPolicyBetaApiDeleteSodPolicyRequest,
-    SodPolicyBetaStateEnum
+    SodPolicy,
+    SodPolicyStateEnum,
+    SODPolicyApi,
+    SODPolicyApiListSodPoliciesRequest,
+    SODPolicyApiCreateSodPolicyRequest,
+    SODPolicyApiPatchSodPolicyRequest,
+    SODPolicyApiPutPolicyScheduleRequest,
+    SODPolicyApiDeleteSodPolicyRequest,
+    CampaignTemplate,
+    CertificationCampaignsApi,
+    CertificationCampaignsApiUpdateCampaignRequest,
+    CertificationCampaignsApiListCampaignTemplatesRequest,
+    CertificationCampaignsApiDeleteCampaignTemplateRequest,
+    CertificationCampaignsApiCreateCampaignTemplateRequest,
+    CertificationCampaignsApiSetCampaignTemplateScheduleRequest,
+    GovernanceGroupsBetaApi,
+    GovernanceGroupsBetaApiListWorkgroupsRequest,
+    GovernanceGroupsBetaApiListWorkgroupMembersRequest
 } from "sailpoint-api-client"
 import { PolicyConfig } from "./model/policy-config"
 import { PolicyImpl } from "./model/policy-impl"
@@ -187,10 +187,10 @@ export class IdnClient {
         }
     }
 
-    async findExistingPolicy(policyConfig: PolicyConfig): Promise<SodPolicyBeta> {
+    async findExistingPolicy(policyConfig: PolicyConfig): Promise<SodPolicy> {
         const filter = `name eq "${policyConfig.policyName}"`
-        const policyApi = new SODPolicyBetaApi(this.apiConfig)
-        const findPolicyRequest: SODPolicyBetaApiListSodPoliciesRequest = {
+        const policyApi = new SODPolicyApi(this.apiConfig)
+        const findPolicyRequest: SODPolicyApiListSodPoliciesRequest = {
             filters: filter
         }
         try {
@@ -208,10 +208,10 @@ export class IdnClient {
         }
     }
 
-    async findExistingCampaign(policyConfig: PolicyConfig): Promise<CampaignTemplateBeta | any> {
+    async findExistingCampaign(policyConfig: PolicyConfig): Promise<CampaignTemplate | any> {
         const filter = `name eq "${policyConfig.certificationName}"`
-        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
-        const findCampaignRequest: CertificationCampaignsBetaApiListCampaignTemplatesRequest = {
+        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const findCampaignRequest: CertificationCampaignsApiListCampaignTemplatesRequest = {
             filters: filter
         }
         try {
@@ -394,9 +394,9 @@ export class IdnClient {
     }
 
     async searchGovGroupByName(govGroupName: string): Promise<any> {
-        const filter = `[{property:name, value:"${govGroupName}", operation: EQ}]`
-        const govGroupApi = new GovernanceGroupsV2Api(this.apiConfig)
-        const findGovGroupRequest: GovernanceGroupsV2ApiListWorkgroupsRequest = {
+        const filter = `name eq "${govGroupName}"`
+        const govGroupApi = new GovernanceGroupsBetaApi(this.apiConfig)
+        const findGovGroupRequest: GovernanceGroupsBetaApiListWorkgroupsRequest = {
             filters: filter
         }
         try {
@@ -417,8 +417,8 @@ export class IdnClient {
     }
 
     async findGovGroupMembers(govGroupId: string): Promise<any[]> {
-        const govGroupApi = new GovernanceGroupsV2Api(this.apiConfig)
-        const findGovGroupMembersRequest: GovernanceGroupsV2ApiListWorkgroupMembersRequest = {
+        const govGroupApi = new GovernanceGroupsBetaApi(this.apiConfig)
+        const findGovGroupMembersRequest: GovernanceGroupsBetaApiListWorkgroupMembersRequest = {
             workgroupId: govGroupId
         }
         try {
@@ -429,7 +429,7 @@ export class IdnClient {
             } else {
                 // Return the governance group members
                 let members: any[] = []
-                govGroupMembers.data.forEach(govGroupMember => members.push({ "id": govGroupMember.externalId, "type": "IDENTITY", "name": govGroupMember.name }))
+                govGroupMembers.data.forEach(govGroupMember => members.push({ "id": govGroupMember.id, "type": "IDENTITY", "name": govGroupMember.name }))
                 return members
             }
         } catch (err) {
@@ -607,8 +607,8 @@ export class IdnClient {
     async deletePolicy(policyId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Policy via API
-        const policyApi = new SODPolicyBetaApi(this.apiConfig)
-        const deletePolicyRequest: SODPolicyBetaApiDeleteSodPolicyRequest = {
+        const policyApi = new SODPolicyApi(this.apiConfig)
+        const deletePolicyRequest: SODPolicyApiDeleteSodPolicyRequest = {
             id: policyId
         }
         try {
@@ -624,11 +624,11 @@ export class IdnClient {
         let errorMessage = ""
         let policyId = ""
         let policyQuery = ""
-        let policyState = policyConfig.policyState ? SodPolicyBetaStateEnum.Enforced : SodPolicyBetaStateEnum.NotEnforced
+        let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
         // Submit the new Policy via API
-        const policyApi = new SODPolicyBetaApi(this.apiConfig)
-        const newPolicyRequest: SODPolicyBetaApiCreateSodPolicyRequest = {
-            sodPolicyBeta: {
+        const policyApi = new SODPolicyApi(this.apiConfig)
+        const newPolicyRequest: SODPolicyApiCreateSodPolicyRequest = {
+            sodPolicy: {
                 name: policyConfig.policyName,
                 description: policyConfig.policyDescription,
                 ownerRef: policyOwner,
@@ -660,12 +660,12 @@ export class IdnClient {
     async updatePolicy(existingPolicyId: string, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyQuery: string]> {
         let errorMessage = ""
         let policyQuery = ""
-        let policyState = policyConfig.policyState ? SodPolicyBetaStateEnum.Enforced : SodPolicyBetaStateEnum.NotEnforced
+        let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
         // Submit the patch Policy via API
-        const policyApi = new SODPolicyBetaApi(this.apiConfig)
-        const patchPolicyRequest: SODPolicyBetaApiPatchSodPolicyRequest = {
+        const policyApi = new SODPolicyApi(this.apiConfig)
+        const patchPolicyRequest: SODPolicyApiPatchSodPolicyRequest = {
             id: existingPolicyId,
-            requestBody: [
+            jsonPatchOperation: [
                 {
                     "op": "replace",
                     "path": "/name",
@@ -733,10 +733,10 @@ export class IdnClient {
     async setPolicySchedule(policyId: string, policyConfig: PolicyConfig, policySchedule: any, policyRecipients: any): Promise<string> {
         let errorMessage = ""
         // Update the Policy Schedule via API
-        const policyApi = new SODPolicyBetaApi(this.apiConfig)
-        const setPolicyScheduleRequest: SODPolicyBetaApiUpdatePolicyScheduleRequest = {
+        const policyApi = new SODPolicyApi(this.apiConfig)
+        const setPolicyScheduleRequest: SODPolicyApiPutPolicyScheduleRequest = {
             id: policyId,
-            sodPolicyScheduleBeta: {
+            sodPolicySchedule: {
                 name: `${policyConfig.policySchedule}: ${policyConfig.policyName}`,
                 description: policyConfig.policyDescription,
                 schedule: policySchedule,
@@ -744,7 +744,7 @@ export class IdnClient {
             }
         }
         try {
-            const newPolicySchedule = await policyApi.updatePolicySchedule(setPolicyScheduleRequest)
+            const newPolicySchedule = await policyApi.putPolicySchedule(setPolicyScheduleRequest)
         } catch (err) {
             errorMessage = `Error setting Policy Schedule using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(setPolicyScheduleRequest)}`
             logger.error(errorMessage, err)
@@ -755,8 +755,8 @@ export class IdnClient {
     async deletePolicyCampaign(campaignId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Campaign via API
-        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
-        const deleteCampaignTemplareRequest: CertificationCampaignsBetaApiDeleteCampaignTemplateRequest = {
+        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const deleteCampaignTemplareRequest: CertificationCampaignsApiDeleteCampaignTemplateRequest = {
             id: campaignId
         }
         try {
@@ -776,9 +776,9 @@ export class IdnClient {
             reviewer = violationOwner
         }
         // Create new campaign using API
-        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
-        const createCampaignRequest: CertificationCampaignsBetaApiCreateCampaignTemplateRequest = {
-            campaignTemplateBeta: {
+        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const createCampaignRequest: CertificationCampaignsApiCreateCampaignTemplateRequest = {
+            campaignTemplate: {
                 name: policyConfig.certificationName,
                 description: policyConfig.certificationDescription,
                 deadlineDuration: this.campaignDuration,
@@ -821,10 +821,10 @@ export class IdnClient {
             reviewer = violationOwner
         }
         // Update existing campaign using API
-        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
-        const patchCampaignRequest: CertificationCampaignsBetaApiUpdateCampaignRequest = {
+        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const patchCampaignRequest: CertificationCampaignsApiUpdateCampaignRequest = {
             id: campaignId,
-            requestBody: [
+            jsonPatchOperation: [
                 {
                     "op": "replace",
                     "path": "/name",
@@ -884,10 +884,10 @@ export class IdnClient {
     async setCampaignSchedule(campaignId: string, campaignSchedule: any): Promise<string> {
         let errorMessage = ""
         // Update the Campaign Schedule via API
-        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
-        const setCampaignScheduleRequest: CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest = {
+        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const setCampaignScheduleRequest: CertificationCampaignsApiSetCampaignTemplateScheduleRequest = {
             id: campaignId,
-            scheduleBeta: campaignSchedule
+            schedule: campaignSchedule
         }
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
