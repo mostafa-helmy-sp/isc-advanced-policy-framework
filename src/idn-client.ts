@@ -346,11 +346,21 @@ export class IdnClient {
         }
     }
 
-    async searchRolesByAccessProfiles(accessProfiles: any[]): Promise<any[]> {
-        if (!accessProfiles || accessProfiles.length == 0) {
+    async searchRolesByAccessProfilesOrEntitlements(entitlements: any[], accessProfiles: any[]): Promise<any[]> {
+        let query
+        if (entitlements && entitlements.length > 0) {
+            query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
+        }
+        if (accessProfiles && accessProfiles.length > 0) {
+            if (!query) {
+                query = this.buildIdQuery(accessProfiles, "accessProfiles.id:", " OR ")
+            } else {
+                query += this.buildIdQuery(accessProfiles, "accessProfiles.id:", " OR ", " OR ")
+            }
+        }
+        if (!query) {
             return []
         }
-        const query = this.buildIdQuery(accessProfiles, "accessProfiles.id:", " OR ")
         const searchApi = new SearchApi(this.apiConfig)
         const search: Search = {
             indices: [
@@ -1067,8 +1077,8 @@ export class IdnClient {
             const query2AccessProfiles = await this.searchAccessProfilesbyEntitlements(query2Entitlemnts)
 
             // Find LeftHand & RightHand Roles using the Search API
-            const query1Roles = await this.searchRolesByAccessProfiles(query1AccessProfiles)
-            const query2Roles = await this.searchRolesByAccessProfiles(query2AccessProfiles)
+            const query1Roles = await this.searchRolesByAccessProfilesOrEntitlements(query1Entitlemnts, query1AccessProfiles)
+            const query2Roles = await this.searchRolesByAccessProfilesOrEntitlements(query2Entitlemnts, query2AccessProfiles)
 
             // Build AccessProfile and Role Name lists
             const leftHandAccessProfiles = this.buildNameArray(query1AccessProfiles)
