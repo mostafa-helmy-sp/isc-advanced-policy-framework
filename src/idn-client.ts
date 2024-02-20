@@ -88,14 +88,15 @@ export class IdnClient {
         this.apiConfig = new Configuration(ConfigurationParameters)
         this.apiConfig.retriesConfig = {
             retries: 10,
-            retryDelay: axiosRetry.exponentialDelay,
+            // retryDelay: (retryCount) => { return retryCount * 2000; },
+            retryDelay: (retryCount, error) => axiosRetry.exponentialDelay(retryCount, error, 2000),
             retryCondition: (error) => {
                 return axiosRetry.isNetworkError(error) ||
                     axiosRetry.isRetryableError(error) ||
                     error.response?.status === 429;
             },
             onRetry: (retryCount, error, requestConfig) => {
-                logger.debug(`Retrying API (Try number ${retryCount}) due to request error: ${error}`)
+                logger.debug(`Retrying API [${requestConfig.url}] due to request error: [${error}]. Try number [${retryCount}]`)
             }
         }
         // configure the rest of the source parameters
