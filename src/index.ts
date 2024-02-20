@@ -10,6 +10,7 @@ import {
     StdTestConnectionOutput,
     StdAccountListInput,
     ConnectorError,
+    StdTestConnectionInput,
 } from '@sailpoint/connector-sdk'
 import { IdnClient } from './idn-client'
 
@@ -22,7 +23,7 @@ export const connector = async () => {
     const idnClient = new IdnClient(config)
 
     return createConnector()
-        .stdTestConnection(async (context: Context, input: undefined, res: Response<StdTestConnectionOutput>) => {
+        .stdTestConnection(async (context: Context, input: StdTestConnectionInput, res: Response<StdTestConnectionOutput>) => {
             const response = await idnClient.testConnection()
             if (response) {
                 throw new ConnectorError(response)

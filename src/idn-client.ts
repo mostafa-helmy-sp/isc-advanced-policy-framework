@@ -20,19 +20,29 @@ import {
     SODPolicyApiPatchSodPolicyRequest,
     SODPolicyApiPutPolicyScheduleRequest,
     SODPolicyApiDeleteSodPolicyRequest,
+    Schedule,
+    ScheduleType,
+    ScheduleHoursTypeEnum,
+    ScheduleDaysTypeEnum,
     CampaignTemplate,
     CertificationCampaignsApi,
     CertificationCampaignsApiUpdateCampaignRequest,
     CertificationCampaignsApiListCampaignTemplatesRequest,
     CertificationCampaignsApiDeleteCampaignTemplateRequest,
     CertificationCampaignsApiCreateCampaignTemplateRequest,
-    CertificationCampaignsApiSetCampaignTemplateScheduleRequest,
+    CertificationCampaignsBetaApi,
+    CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest,
+    ScheduleBeta,
+    ScheduleBetaTypeEnum,
+    ScheduleHoursBetaTypeEnum,
+    ScheduleDaysBetaTypeEnum,
     GovernanceGroupsBetaApi,
     GovernanceGroupsBetaApiListWorkgroupsRequest,
     GovernanceGroupsBetaApiListWorkgroupMembersRequest
 } from "sailpoint-api-client"
 import { PolicyConfig } from "./model/policy-config"
 import { PolicyImpl } from "./model/policy-impl"
+import axiosRetry from "axios-retry"
 
 // Set IDN Global Variables
 var tokenUrlPath = "/oauth/token"
@@ -77,7 +87,16 @@ export class IdnClient {
         }
         this.apiConfig = new Configuration(ConfigurationParameters)
         this.apiConfig.retriesConfig = {
-            retries: 2
+            retries: 10,
+            retryDelay: axiosRetry.exponentialDelay,
+            retryCondition: (error) => {
+                return axiosRetry.isNetworkError(error) ||
+                    axiosRetry.isRetryableError(error) ||
+                    error.response?.status === 429;
+            },
+            onRetry: (retryCount, error, requestConfig) => {
+                logger.debug(`Retrying API (Try number ${retryCount}) due to request error: ${error}`)
+            }
         }
         // configure the rest of the source parameters
         this.policyConfigSourceName = config.policyConfigSourceName
@@ -294,6 +313,9 @@ export class IdnClient {
     }
 
     async searchAccessProfilesbyEntitlements(entitlements: any[]): Promise<any[]> {
+        if (!entitlements || entitlements.length == 0) {
+            return []
+        }
         const query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
         const searchApi = new SearchApi(this.apiConfig)
         const search: Search = {
@@ -324,6 +346,9 @@ export class IdnClient {
     }
 
     async searchRolesByAccessProfiles(accessProfiles: any[]): Promise<any[]> {
+        if (!accessProfiles || accessProfiles.length == 0) {
+            return []
+        }
         const query = this.buildIdQuery(accessProfiles, "accessProfiles.id:", " OR ")
         const searchApi = new SearchApi(this.apiConfig)
         const search: Search = {
@@ -496,72 +521,74 @@ export class IdnClient {
         return names
     }
 
-    buildPolicySchedule(scheduleConfig: string): any {
-        let schedule = null
-        if (scheduleConfig == "DAILY") {
+    buildPolicySchedule(scheduleConfig: string): Schedule | any {
+        let schedule
+        if (scheduleConfig == ScheduleType.Daily) {
             schedule = {
-                "type": scheduleConfig,
-                "hours": {
-                    "type": "LIST",
-                    "values": this.hourlyScheduleDay
+                type: ScheduleType.Daily,
+                hours: {
+                    type: ScheduleHoursTypeEnum.List,
+                    values: this.hourlyScheduleDay
                 }
             }
-        } else if (scheduleConfig == "WEEKLY") {
+        } else if (scheduleConfig == ScheduleType.Weekly) {
             schedule = {
-                "type": scheduleConfig,
-                "hours": {
-                    "type": "LIST",
-                    "values": this.hourlyScheduleDay
+                type: ScheduleType.Weekly,
+                hours: {
+                    type: ScheduleHoursTypeEnum.List,
+                    values: this.hourlyScheduleDay
                 },
-                "days": {
-                    "type": "LIST",
-                    "values": this.weeklyScheduleDay
+                days: {
+                    type: ScheduleDaysTypeEnum.List,
+                    values: this.weeklyScheduleDay
                 }
             }
-        } else if (scheduleConfig == "MONTHLY") {
+        } else if (scheduleConfig == ScheduleType.Monthly) {
             schedule = {
-                "type": scheduleConfig,
-                "hours": {
-                    "type": "LIST",
-                    "values": this.hourlyScheduleDay
+                type: ScheduleType.Monthly,
+                hours: {
+                    type: ScheduleHoursTypeEnum.List,
+                    values: this.hourlyScheduleDay
                 },
-                "days": {
-                    "type": "LIST",
-                    "values": this.monthlyScheduleDay
+                days: {
+                    type: ScheduleDaysTypeEnum.List,
+                    values: this.monthlyScheduleDay
                 }
             }
         }
-        return schedule
+        if (schedule)
+            return schedule
     }
 
-    buildCampaignSchedule(scheduleConfig: string): any {
-        let schedule = null
-        if (scheduleConfig == "WEEKLY") {
+    buildCampaignSchedule(scheduleConfig: string): ScheduleBeta | undefined {
+        let schedule
+        if (scheduleConfig == ScheduleBetaTypeEnum.Weekly) {
             schedule = {
-                "type": scheduleConfig,
-                "hours": {
-                    "type": "LIST",
-                    "values": this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
+                type: ScheduleBetaTypeEnum.Weekly,
+                hours: {
+                    type: ScheduleHoursBetaTypeEnum.List,
+                    values: this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
                 },
-                "days": {
-                    "type": "LIST",
-                    "values": this.weeklyScheduleDay.slice(0, maxWeeklyDaysPerCampaignSchedule)
+                days: {
+                    type: ScheduleDaysBetaTypeEnum.List,
+                    values: this.weeklyScheduleDay.slice(0, maxWeeklyDaysPerCampaignSchedule)
                 }
             }
-        } else if (scheduleConfig == "MONTHLY") {
+        } else if (scheduleConfig == ScheduleBetaTypeEnum.Monthly) {
             schedule = {
-                "type": scheduleConfig,
-                "hours": {
-                    "type": "LIST",
-                    "values": this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
+                type: ScheduleBetaTypeEnum.Monthly,
+                hours: {
+                    type: ScheduleHoursBetaTypeEnum.List,
+                    values: this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
                 },
-                "days": {
-                    "type": "LIST",
-                    "values": this.monthlyScheduleDay.slice(0, maxMonthlyDaysPerCampaignSchedule)
+                days: {
+                    type: ScheduleDaysBetaTypeEnum.List,
+                    values: this.monthlyScheduleDay.slice(0, maxMonthlyDaysPerCampaignSchedule)
                 }
             }
         }
-        return schedule
+        if (schedule)
+            return schedule
     }
 
     async resolvePolicyOwner(policyConfig: PolicyConfig): Promise<any> {
@@ -667,54 +694,54 @@ export class IdnClient {
             id: existingPolicyId,
             jsonPatchOperation: [
                 {
-                    "op": "replace",
-                    "path": "/name",
-                    "value": policyConfig.policyName
+                    op: "replace",
+                    path: "/name",
+                    value: policyConfig.policyName
                 },
                 {
-                    "op": "replace",
-                    "path": "/description",
-                    "value": policyConfig.policyDescription
+                    op: "replace",
+                    path: "/description",
+                    value: policyConfig.policyDescription
                 },
                 {
-                    "op": "replace",
-                    "path": "/ownerRef",
-                    "value": policyOwner
+                    op: "replace",
+                    path: "/ownerRef",
+                    value: policyOwner
                 },
                 {
-                    "op": "replace",
-                    "path": "/externalPolicyReference",
-                    "value": policyConfig.externalReference
+                    op: "replace",
+                    path: "/externalPolicyReference",
+                    value: policyConfig.externalReference
                 },
                 {
-                    "op": "replace",
-                    "path": "/compensatingControls",
-                    "value": policyConfig.mitigatingControls
+                    op: "replace",
+                    path: "/compensatingControls",
+                    value: policyConfig.mitigatingControls
                 },
                 {
-                    "op": "replace",
-                    "path": "/correctionAdvice",
-                    "value": policyConfig.correctionAdvice
+                    op: "replace",
+                    path: "/correctionAdvice",
+                    value: policyConfig.correctionAdvice
                 },
                 {
-                    "op": "replace",
-                    "path": "/state",
-                    "value": policyState
+                    op: "replace",
+                    path: "/state",
+                    value: policyState
                 },
                 {
-                    "op": "replace",
-                    "path": "/tags",
-                    "value": policyConfig.tags
+                    op: "replace",
+                    path: "/tags",
+                    value: policyConfig.tags
                 },
                 {
-                    "op": "replace",
-                    "path": "/violationOwnerAssignmentConfig",
-                    "value": violationOwner
+                    op: "replace",
+                    path: "/violationOwnerAssignmentConfig",
+                    value: violationOwner
                 },
                 {
-                    "op": "replace",
-                    "path": "/conflictingAccessCriteria",
-                    "value": conflictingAccessCriteria
+                    op: "replace",
+                    path: "/conflictingAccessCriteria",
+                    value: conflictingAccessCriteria
                 },
             ]
         }
@@ -881,13 +908,13 @@ export class IdnClient {
         return errorMessage
     }
 
-    async setCampaignSchedule(campaignId: string, campaignSchedule: any): Promise<string> {
+    async setCampaignSchedule(campaignId: string, campaignSchedule: ScheduleBeta): Promise<string> {
         let errorMessage = ""
         // Update the Campaign Schedule via API
-        const certsApi = new CertificationCampaignsApi(this.apiConfig)
-        const setCampaignScheduleRequest: CertificationCampaignsApiSetCampaignTemplateScheduleRequest = {
+        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
+        const setCampaignScheduleRequest: CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest = {
             id: campaignId,
-            schedule: campaignSchedule
+            scheduleBeta: campaignSchedule
         }
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)

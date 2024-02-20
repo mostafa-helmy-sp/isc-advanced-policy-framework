@@ -122,6 +122,25 @@
 					]
 				}
 			]
+		},
+		{
+			"type": "menu",
+			"label": "Administrator Settings",
+			"items": [
+				{
+					"type": "section",
+					"sectionTitle": "Task Processing",
+					"sectionHelpMessage": "Use these features to configure administrator settings and troubleshoot issues with the connector. Check Enable Debug Logging to enable the connector to create and send debug log files to SailPoint Support to help troubleshoot issues.",
+					"items": [
+						{
+							"key": "spConnDebugLoggingEnabled",
+							"type": "checkbox",
+							"label": "Enable Debug Logging",
+							"required": true
+						}
+					]
+				}
+			]
 		}
 	],
 	"accountSchema": {
