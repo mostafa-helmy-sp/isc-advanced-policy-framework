@@ -7,14 +7,33 @@ import {
     ConfigurationParameters,
     SourcesApi,
     SourcesApiListSourcesRequest,
+    Account,
     AccountsApi,
     AccountsApiListAccountsRequest,
     SearchApi,
     Search,
+    Index,
     Paginator,
+    EntitlementDocument,
+    AccessProfileDocument,
+    RoleDocument,
+    GovernanceGroupsBetaApi,
+    GovernanceGroupsBetaApiListWorkgroupsRequest,
+    GovernanceGroupsBetaApiListWorkgroupMembersRequest,
+    DtoType,
+    JsonPatchOperationOpEnum,
     SodPolicy,
     SodPolicyStateEnum,
+    ViolationOwnerAssignmentConfig,
+    ViolationOwnerAssignmentConfigAssignmentRuleEnum,
+    SodPolicyConflictingAccessCriteria,
+    AccessCriteriaCriteriaListInner,
+    AccessConstraint,
+    AccessConstraintTypeEnum,
+    AccessConstraintOperatorEnum,
+    AccessCriteriaCriteriaListInnerTypeEnum,
     SODPolicyApi,
+    SodPolicyTypeEnum,
     SODPolicyApiListSodPoliciesRequest,
     SODPolicyApiCreateSodPolicyRequest,
     SODPolicyApiPatchSodPolicyRequest,
@@ -25,6 +44,10 @@ import {
     ScheduleHoursTypeEnum,
     ScheduleDaysTypeEnum,
     CampaignTemplate,
+    CampaignTypeEnum,
+    CampaignCorrelatedStatusEnum,
+    CampaignAllOfSearchCampaignInfoTypeEnum,
+    CampaignAllOfSearchCampaignInfoReviewer,
     CertificationCampaignsApi,
     CertificationCampaignsApiUpdateCampaignRequest,
     CertificationCampaignsApiListCampaignTemplatesRequest,
@@ -35,10 +58,7 @@ import {
     ScheduleBeta,
     ScheduleBetaTypeEnum,
     ScheduleHoursBetaTypeEnum,
-    ScheduleDaysBetaTypeEnum,
-    GovernanceGroupsBetaApi,
-    GovernanceGroupsBetaApiListWorkgroupsRequest,
-    GovernanceGroupsBetaApiListWorkgroupMembersRequest
+    ScheduleDaysBetaTypeEnum
 } from "sailpoint-api-client"
 import { PolicyConfig } from "./model/policy-config"
 import { PolicyImpl } from "./model/policy-impl"
@@ -46,8 +66,6 @@ import axiosRetry from "axios-retry"
 
 // Set IDN Global Variables
 var tokenUrlPath = "/oauth/token"
-var maxEntitlementsPerPolicySide = 50
-var maxAccessItemsPerCampaign = 3000
 var maxHoursPerCampaignSchedule = 1
 var maxWeeklyDaysPerCampaignSchedule = 1
 var maxMonthlyDaysPerCampaignSchedule = 4
@@ -58,8 +76,11 @@ var defaultHourlyScheduleDay = ["9"]
 var defaultWeeklyScheduleDay = ["MON"]
 var defaultMonthlyScheduleDay = ["1"]
 var defaultCampaignDuration = "P2W"
+var defaultMaxEntitlementsPerPolicySide = 400
+var defaultMaxAccessItemsPerCampaign = 10000
 
 // Set Connector Values
+var sodPolicyType = "SOD"
 var actionSchedulePolicy = "REPORT"
 var actionCertifyViolations = "CERTIFY"
 var actionDeleteAll = "DELETE_ALL"
@@ -76,6 +97,8 @@ export class IdnClient {
     private weeklyScheduleDay: string[]
     private monthlyScheduleDay: string[]
     private campaignDuration: string
+    private maxEntitlementsPerPolicySide: number
+    private maxAccessItemsPerCampaign: number
 
     constructor(config: any) {
         // configure the SailPoint SDK API Client
@@ -139,9 +162,19 @@ export class IdnClient {
         } else {
             this.campaignDuration = defaultCampaignDuration
         }
+        if (config.maxEntitlementsPerPolicySide) {
+            this.maxEntitlementsPerPolicySide = config.maxEntitlementsPerPolicySide
+        } else {
+            this.maxEntitlementsPerPolicySide = defaultMaxEntitlementsPerPolicySide
+        }
+        if (config.maxAccessItemsPerCampaign) {
+            this.maxAccessItemsPerCampaign = config.maxAccessItemsPerCampaign
+        } else {
+            this.maxAccessItemsPerCampaign = defaultMaxAccessItemsPerCampaign
+        }
     }
 
-    async getPolicyConfigSourceId(): Promise<any> {
+    async getPolicyConfigSourceId(): Promise<string | undefined> {
         let filter = `name eq "${this.policyConfigSourceName}"`
         // Check if Source ID is null
         if (!this.policyConfigSourceId) {
@@ -157,8 +190,10 @@ export class IdnClient {
                     this.policyConfigSourceId = sources.data[0].id
                 }
             } catch (err) {
-                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API ${JSON.stringify(err)} with request: ${JSON.stringify(sourcesRequest)}`
+                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API ${JSON.stringify(err)}`
+                let debugMessage = `Failed Sources API request: ${JSON.stringify(sourcesRequest)}`
                 logger.error(errorMessage, err)
+                logger.debug(debugMessage)
                 throw new ConnectorError(errorMessage)
             }
         }
@@ -167,7 +202,7 @@ export class IdnClient {
         return this.policyConfigSourceId
     }
 
-    async getAllPolicyConfigs(): Promise<any[]> {
+    async getAllPolicyConfigs(): Promise<Account[]> {
         // Get Policy Config Source ID
         await this.getPolicyConfigSourceId()
         const filter = `sourceId eq "${this.policyConfigSourceId}"`
@@ -181,13 +216,15 @@ export class IdnClient {
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data
         } catch (err) {
-            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API ${JSON.stringify(err)} with request: ${JSON.stringify(accountsRequest)}`
+            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API ${JSON.stringify(err)}`
+            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(accountsRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             throw new ConnectorError(errorMessage)
         }
     }
 
-    async getPolicyConfigByName(policyName: string): Promise<any> {
+    async getPolicyConfigByName(policyName: string): Promise<Account> {
         // Get Policy Config Source ID
         await this.getPolicyConfigSourceId()
         const filter = `sourceId eq "${this.policyConfigSourceId}" and name eq "${policyName}"`
@@ -201,13 +238,15 @@ export class IdnClient {
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data[0]
         } catch (err) {
-            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API ${JSON.stringify(err)} with request: ${JSON.stringify(accountsRequest)}`
+            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API ${JSON.stringify(err)}`
+            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(accountsRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             throw new ConnectorError(errorMessage)
         }
     }
 
-    async findExistingPolicy(policyConfig: PolicyConfig): Promise<SodPolicy> {
+    async findExistingPolicy(policyConfig: PolicyConfig): Promise<SodPolicy | undefined> {
         const filter = `name eq "${policyConfig.policyName}"`
         const policyApi = new SODPolicyApi(this.apiConfig)
         const findPolicyRequest: SODPolicyApiListSodPoliciesRequest = {
@@ -217,18 +256,20 @@ export class IdnClient {
             const existingPolicy = await policyApi.listSodPolicies(findPolicyRequest)
             // Check if no policy already exists
             if (existingPolicy.data.length == 0 || !existingPolicy.data[0].id) {
-                return {}
+                return
             } else {
                 return existingPolicy.data[0]
             }
         } catch (err) {
-            let errorMessage = `Error finding existing Policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(findPolicyRequest)}`
+            let errorMessage = `Error finding existing Policy using SOD-Policies API ${JSON.stringify(err)}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(findPolicyRequest)}`
             logger.error(errorMessage, err)
-            return {}
+            logger.debug(debugMessage)
+            return
         }
     }
 
-    async findExistingCampaign(policyConfig: PolicyConfig): Promise<CampaignTemplate | any> {
+    async findExistingCampaign(policyConfig: PolicyConfig): Promise<CampaignTemplate | undefined> {
         const filter = `name eq "${policyConfig.certificationName}"`
         const certsApi = new CertificationCampaignsApi(this.apiConfig)
         const findCampaignRequest: CertificationCampaignsApiListCampaignTemplatesRequest = {
@@ -238,14 +279,16 @@ export class IdnClient {
             const existingCampaign = await certsApi.listCampaignTemplates(findCampaignRequest)
             // Check if no campaign already exists
             if (existingCampaign.data.length == 0 || !existingCampaign.data[0].id) {
-                return {}
+                return
             } else {
                 return existingCampaign.data[0]
             }
         } catch (err) {
-            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(findCampaignRequest)}`
+            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(findCampaignRequest)}`
             logger.error(errorMessage, err)
-            return {}
+            logger.debug(debugMessage)
+            return
         }
     }
 
@@ -273,8 +316,8 @@ export class IdnClient {
         return query
     }
 
-    buildIdArray(items: any[]): any[] {
-        let ids: any[] = []
+    buildIdArray(items: any[]): string[] {
+        let ids: string[] = []
         items.forEach(item => ids.push(item.id))
         return ids
     }
@@ -283,11 +326,11 @@ export class IdnClient {
         return [... new Set([...items1, ...items2])]
     }
 
-    async searchEntitlementsByQuery(query: string): Promise<any[]> {
+    async searchEntitlementsByQuery(query: string): Promise<EntitlementDocument[]> {
         const searchApi = new SearchApi(this.apiConfig)
         const search: Search = {
             indices: [
-                "entitlements"
+                Index.Entitlements
             ],
             query: {
                 query: query
@@ -304,16 +347,18 @@ export class IdnClient {
             sort: ["id"]
         }
         try {
-            const entitlements = await Paginator.paginateSearchApi(searchApi, search)
-            return entitlements.data
+            const entitlements: EntitlementDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
+            return entitlements
         } catch (err) {
-            let errorMessage = `Error finding entitlements using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding entitlements using Search API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             return []
         }
     }
 
-    async searchAccessProfilesbyEntitlements(entitlements: any[]): Promise<any[]> {
+    async searchAccessProfilesbyEntitlements(entitlements: any[]): Promise<AccessProfileDocument[]> {
         if (!entitlements || entitlements.length == 0) {
             return []
         }
@@ -321,7 +366,7 @@ export class IdnClient {
         const searchApi = new SearchApi(this.apiConfig)
         const search: Search = {
             indices: [
-                "accessprofiles"
+                Index.Accessprofiles
             ],
             query: {
                 query: query
@@ -337,16 +382,18 @@ export class IdnClient {
             sort: ["id"]
         }
         try {
-            const accessProfiles = await Paginator.paginateSearchApi(searchApi, search)
-            return accessProfiles.data
+            const accessProfiles: AccessProfileDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
+            return accessProfiles
         } catch (err) {
-            let errorMessage = `Error finding access profiles using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding access profiles using Search API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             return []
         }
     }
 
-    async searchRolesByAccessProfilesOrEntitlements(entitlements: any[], accessProfiles: any[]): Promise<any[]> {
+    async searchRolesByAccessProfilesOrEntitlements(entitlements: any[], accessProfiles: any[]): Promise<RoleDocument[]> {
         let query
         if (entitlements && entitlements.length > 0) {
             query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
@@ -364,7 +411,7 @@ export class IdnClient {
         const searchApi = new SearchApi(this.apiConfig)
         const search: Search = {
             indices: [
-                "roles"
+                Index.Roles
             ],
             query: {
                 query: query
@@ -379,11 +426,13 @@ export class IdnClient {
             sort: ["id"]
         }
         try {
-            const roles = await Paginator.paginateSearchApi(searchApi, search)
-            return roles.data
+            const roles: RoleDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
+            return roles
         } catch (err) {
-            let errorMessage = `Error finding roles using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding roles using Search API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             return []
         }
     }
@@ -398,7 +447,7 @@ export class IdnClient {
         }
         const search: Search = {
             indices: [
-                "identities"
+                Index.Identities
             ],
             query: {
                 query: query
@@ -420,11 +469,13 @@ export class IdnClient {
             } else {
                 // Use the first identity if more than one match
                 const identity = identities.data[0]
-                return { "id": identity.id, "name": identity.name, "type": identity._type.toUpperCase() }
+                return { id: identity.id, name: identity.name, type: identity._type.toUpperCase() }
             }
         } catch (err) {
-            let errorMessage = `Error finding identity using Search API ${JSON.stringify(err)} with request: ${JSON.stringify(search)}`
+            let errorMessage = `Error finding identity using Search API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             return
         }
     }
@@ -439,15 +490,17 @@ export class IdnClient {
             const existingGovGroup = await govGroupApi.listWorkgroups(findGovGroupRequest)
             // Check if no governance group exists
             if (existingGovGroup.data.length == 0) {
-                return null
+                return
             } else {
                 // Use the first governance group if more than one match
                 const govGroup = existingGovGroup.data[0]
-                return { "id": govGroup.id, "name": govGroup.name, "type": "GOVERNANCE_GROUP" }
+                return { id: govGroup.id, name: govGroup.name, type: DtoType.GovernanceGroup }
             }
         } catch (err) {
-            let errorMessage = `Error finding Governance Group using Governance-Groups API ${JSON.stringify(err)} with request: ${JSON.stringify(findGovGroupRequest)}`
+            let errorMessage = `Error finding Governance Group using Governance-Groups API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(findGovGroupRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             return
         }
     }
@@ -465,33 +518,44 @@ export class IdnClient {
             } else {
                 // Return the governance group members
                 let members: any[] = []
-                govGroupMembers.data.forEach(govGroupMember => members.push({ "id": govGroupMember.id, "type": "IDENTITY", "name": govGroupMember.name }))
+                govGroupMembers.data.forEach(govGroupMember => members.push({ id: govGroupMember.id, type: DtoType.Identity, name: govGroupMember.name }))
                 return members
             }
         } catch (err) {
-            let errorMessage = `Error finding Governance Group members using Governance-Groups API ${JSON.stringify(err)} with request: ${JSON.stringify(findGovGroupMembersRequest)}`
+            let errorMessage = `Error finding Governance Group members using Governance-Groups API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(findGovGroupMembersRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
             return []
         }
     }
 
-    buildConflictingAccessCriteriaList(items: any[]): any[] {
-        let criteriaList: any[] = []
-        items.forEach(item => criteriaList.push({ "id": item.id, "type": item.type.toUpperCase() }))
+    buildConflictingAccessCriteriaList(items: EntitlementDocument[]): AccessCriteriaCriteriaListInner[] {
+        let criteriaList: AccessCriteriaCriteriaListInner[] = []
+        items.forEach(item => criteriaList.push({ id: item.id, type: AccessCriteriaCriteriaListInnerTypeEnum.Entitlement }))
         return criteriaList
     }
 
-    buildPolicyConflictingAccessCriteria(policyConfig: PolicyConfig, query1Entitlemnts: any[], query2Entitlemnts: any[]): any {
+    buildPolicyConflictingAccessCriteria(policyConfig: PolicyConfig, query1Entitlemnts: EntitlementDocument[], query2Entitlemnts: EntitlementDocument[]): SodPolicyConflictingAccessCriteria {
         // Build ID,Type,Name arrays
         const leftCriteria = this.buildConflictingAccessCriteriaList(query1Entitlemnts)
         const rightCriteria = this.buildConflictingAccessCriteriaList(query2Entitlemnts)
         // Build the conflicting access criteria
-        const criteria = { "leftCriteria": { "name": policyConfig.query1Name, "criteriaList": leftCriteria }, "rightCriteria": { "name": policyConfig.query2Name, "criteriaList": rightCriteria } }
+        const criteria: SodPolicyConflictingAccessCriteria = {
+            leftCriteria: {
+                name: policyConfig.query1Name,
+                criteriaList: leftCriteria
+            },
+            rightCriteria: {
+                name: policyConfig.query2Name,
+                criteriaList: rightCriteria
+            }
+        }
         return criteria
     }
 
-    buildCampaignAccsesConstraints(entitlements1: any[], entitlements2: any[], accessProfiles1: any[], accessProfiles2: any[], roles1: any[], roles2: any[]): [accessConstraints: any[], leftHandTotalCount: number, rightHandTotalCount: number, totalCount: number] {
-        let accessConstraints: any[] = []
+    buildCampaignAccsesConstraints(entitlements1: EntitlementDocument[], entitlements2: EntitlementDocument[], accessProfiles1: AccessProfileDocument[], accessProfiles2: AccessProfileDocument[], roles1: RoleDocument[], roles2: RoleDocument[]): [accessConstraints: AccessConstraint[], leftHandTotalCount: number, rightHandTotalCount: number, totalCount: number] {
+        let accessConstraints: AccessConstraint[] = []
         // Build ID only arrays
         const entitlement1Ids = this.buildIdArray(entitlements1)
         const entitlement2Ids = this.buildIdArray(entitlements2)
@@ -500,18 +564,18 @@ export class IdnClient {
         const role1Ids = this.buildIdArray(roles1)
         const role2Ids = this.buildIdArray(roles2)
         // Merge left and right arrays uniquely
-        const entitlementIds = this.mergeUnique(entitlement1Ids, entitlement2Ids)
-        const accessProfileIds = this.mergeUnique(accessProfile1Ids, accessProfile2Ids)
-        const roleIds = this.mergeUnique(role1Ids, role2Ids)
+        const entitlementIds: string[] = this.mergeUnique(entitlement1Ids, entitlement2Ids)
+        const accessProfileIds: string[] = this.mergeUnique(accessProfile1Ids, accessProfile2Ids)
+        const roleIds: string[] = this.mergeUnique(role1Ids, role2Ids)
         // Add relevant sections to the access constraints
         if (entitlementIds.length > 0) {
-            accessConstraints.push({ "type": "ENTITLEMENT", "ids": entitlementIds, "operator": "SELECTED" })
+            accessConstraints.push({ type: AccessConstraintTypeEnum.Entitlement, ids: entitlementIds, operator: AccessConstraintOperatorEnum.Selected })
         }
         if (accessProfileIds.length > 0) {
-            accessConstraints.push({ "type": "ACCESS_PROFILE", "ids": accessProfileIds, "operator": "SELECTED" })
+            accessConstraints.push({ type: AccessConstraintTypeEnum.AccessProfile, ids: accessProfileIds, operator: AccessConstraintOperatorEnum.Selected })
         }
         if (roleIds.length > 0) {
-            accessConstraints.push({ "type": "ROLE", "ids": roleIds, "operator": "SELECTED" })
+            accessConstraints.push({ type: AccessConstraintTypeEnum.Role, ids: roleIds, operator: AccessConstraintOperatorEnum.Selected })
         }
         // Calculate metrics to be used on the aggregated policy
         const leftHandTotalCount = entitlement1Ids.length + accessProfile1Ids.length + role1Ids.length
@@ -520,14 +584,14 @@ export class IdnClient {
         return [accessConstraints, leftHandTotalCount, rightHandTotalCount, totalCount]
     }
 
-    buildEntitlementNameArray(items: any[]): any[] {
-        let names: any[] = []
+    buildEntitlementNameArray(items: any[]): string[] {
+        let names: string[] = []
         items.forEach(item => names.push(`Source: ${item.source.name}, Type: ${item.schema}, Name: ${item.name}`))
         return names
     }
 
-    buildNameArray(items: any[]): any[] {
-        let names: any[] = []
+    buildNameArray(items: any[]): string[] {
+        let names: string[] = []
         items.forEach(item => names.push(item.name))
         return names
     }
@@ -603,35 +667,37 @@ export class IdnClient {
     }
 
     async resolvePolicyOwner(policyConfig: PolicyConfig): Promise<any> {
-        if (policyConfig.policyOwnerType == "IDENTITY") {
+        if (policyConfig.policyOwnerType == DtoType.Identity) {
             return await this.searchIdentityByAttribute(this.identityResolutionAttribute, policyConfig.policyOwner)
-        } else if (policyConfig.policyOwnerType == "GOVERNANCE_GROUP") {
+        } else if (policyConfig.policyOwnerType == DtoType.GovernanceGroup) {
             return await this.searchGovGroupByName(policyConfig.policyOwner)
         }
     }
 
     async resolveViolationOwner(policyConfig: PolicyConfig): Promise<any> {
-        if (policyConfig.violationOwnerType == "IDENTITY" && policyConfig.violationOwner) {
+        if (policyConfig.violationOwnerType == DtoType.Identity && policyConfig.violationOwner) {
             return await this.searchIdentityByAttribute(this.identityResolutionAttribute, policyConfig.violationOwner)
-        } else if (policyConfig.violationOwnerType == "GOVERNANCE_GROUP" && policyConfig.violationOwner) {
+        } else if (policyConfig.violationOwnerType == DtoType.GovernanceGroup && policyConfig.violationOwner) {
             return await this.searchGovGroupByName(policyConfig.violationOwner)
         }
     }
 
-    buildviolationOwnerAssignmentConfig(violationOwner: any): any {
+    buildviolationOwnerAssignmentConfig(violationOwner: any): ViolationOwnerAssignmentConfig {
+        let violationOwnerConfig: ViolationOwnerAssignmentConfig
         if (violationOwner) {
-            return { "assignmentRule": "STATIC", "ownerRef": violationOwner }
+            violationOwnerConfig = { assignmentRule: ViolationOwnerAssignmentConfigAssignmentRuleEnum.Static, ownerRef: violationOwner }
         } else {
-            return { "assignmentRule": "MANAGER", "ownerRef": null }
+            violationOwnerConfig = { assignmentRule: ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager }
         }
+        return violationOwnerConfig
     }
 
     async resolvePolicyRecipients(policyConfig: PolicyConfig, violationOwner: any, policyOwner: any): Promise<any[]> {
         let recipients = []
-        if (policyConfig.violationOwnerType == "IDENTITY" && policyConfig.violationOwner) {
+        if (policyConfig.violationOwnerType == DtoType.Identity && policyConfig.violationOwner) {
             // Return the violation manager
             recipients = [violationOwner]
-        } else if (policyConfig.violationOwnerType == "GOVERNANCE_GROUP" && policyConfig.violationOwner) {
+        } else if (policyConfig.violationOwnerType == DtoType.GovernanceGroup && policyConfig.violationOwner) {
             // Resolve governance group members
             recipients = await this.findGovGroupMembers(violationOwner.id)
         }
@@ -652,8 +718,10 @@ export class IdnClient {
         try {
             await policyApi.deleteSodPolicy(deletePolicyRequest)
         } catch (err) {
-            errorMessage = `Error deleting existing policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(deletePolicyRequest)}`
+            errorMessage = `Error deleting existing policy using SOD-Policies API ${JSON.stringify(err)}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(deletePolicyRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return errorMessage
     }
@@ -676,7 +744,7 @@ export class IdnClient {
                 state: policyState,
                 tags: policyConfig.tags,
                 violationOwnerAssignmentConfig: violationOwner,
-                type: "CONFLICTING_ACCESS_BASED",
+                type: SodPolicyTypeEnum.ConflictingAccessBased,
                 conflictingAccessCriteria: conflictingAccessCriteria
             }
         }
@@ -689,8 +757,10 @@ export class IdnClient {
                 policyQuery = newPolicy.data.policyQuery
             }
         } catch (err) {
-            errorMessage = `Error creating a new Policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(newPolicyRequest)}`
+            errorMessage = `Error creating a new Policy using SOD-Policies API ${JSON.stringify(err)}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(newPolicyRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return [errorMessage, policyId, policyQuery]
     }
@@ -705,52 +775,52 @@ export class IdnClient {
             id: existingPolicyId,
             jsonPatchOperation: [
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/name",
                     value: policyConfig.policyName
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/description",
                     value: policyConfig.policyDescription
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/ownerRef",
                     value: policyOwner
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/externalPolicyReference",
                     value: policyConfig.externalReference
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/compensatingControls",
                     value: policyConfig.mitigatingControls
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/correctionAdvice",
                     value: policyConfig.correctionAdvice
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/state",
                     value: policyState
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/tags",
                     value: policyConfig.tags
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/violationOwnerAssignmentConfig",
                     value: violationOwner
                 },
                 {
-                    op: "replace",
+                    op: JsonPatchOperationOpEnum.Replace,
                     path: "/conflictingAccessCriteria",
                     value: conflictingAccessCriteria
                 },
@@ -762,8 +832,10 @@ export class IdnClient {
                 policyQuery = patchedPolicy.data.policyQuery
             }
         } catch (err) {
-            errorMessage = `Error updating existing Policy using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(patchPolicyRequest)}`
+            errorMessage = `Error updating existing Policy using SOD-Policies API ${JSON.stringify(err)}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(patchPolicyRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return [errorMessage, policyQuery]
     }
@@ -784,8 +856,10 @@ export class IdnClient {
         try {
             const newPolicySchedule = await policyApi.putPolicySchedule(setPolicyScheduleRequest)
         } catch (err) {
-            errorMessage = `Error setting Policy Schedule using SOD-Policies API ${JSON.stringify(err)} with request: ${JSON.stringify(setPolicyScheduleRequest)}`
+            errorMessage = `Error setting Policy Schedule using SOD-Policies API ${JSON.stringify(err)}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(setPolicyScheduleRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return errorMessage
     }
@@ -800,17 +874,19 @@ export class IdnClient {
         try {
             await certsApi.deleteCampaignTemplate(deleteCampaignTemplareRequest)
         } catch (err) {
-            errorMessage = `Error deleting existing campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(deleteCampaignTemplareRequest)}`
+            errorMessage = `Error deleting existing campaign using Certification-Campaigns API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(deleteCampaignTemplareRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return errorMessage
     }
 
-    async createPolicyCampaign(policyConfig: PolicyConfig, policyQuery: string, accessConstraints: any, violationOwner: any, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
+    async createPolicyCampaign(policyConfig: PolicyConfig, policyQuery: string, accessConstraints: AccessConstraint[], violationOwner: CampaignAllOfSearchCampaignInfoReviewer | undefined, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
         let errorMessage = ""
         let campaignId = ""
-        let reviewer = null
-        if (policyConfig.violationOwnerType != "MANAGER") {
+        let reviewer
+        if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
             reviewer = violationOwner
         }
         // Create new campaign using API
@@ -823,13 +899,13 @@ export class IdnClient {
                 campaign: {
                     name: policyConfig.certificationName,
                     description: policyConfig.certificationDescription,
-                    type: "SEARCH",
-                    correlatedStatus: "CORRELATED",
+                    type: CampaignTypeEnum.Search,
+                    correlatedStatus: CampaignCorrelatedStatusEnum.Correlated,
                     recommendationsEnabled: true,
                     emailNotificationEnabled: true,
                     sunsetCommentsRequired: true,
                     searchCampaignInfo: {
-                        type: "IDENTITY",
+                        type: CampaignAllOfSearchCampaignInfoTypeEnum.Identity,
                         description: policyConfig.certificationDescription,
                         reviewer: reviewer,
                         query: policyQuery,
@@ -846,8 +922,10 @@ export class IdnClient {
                 campaignId = newCampaign.data.id
             }
         } catch (err) {
-            errorMessage = `Error creating new Campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(createCampaignRequest)}`
+            errorMessage = `Error creating new Campaign using Certification-Campaigns API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(createCampaignRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return [errorMessage, campaignId]
     }
@@ -855,7 +933,7 @@ export class IdnClient {
     async updatePolicyCampaign(campaignId: string, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: any, violationOwner: any): Promise<string> {
         let errorMessage = ""
         let reviewer = null
-        if (policyConfig.violationOwnerType != "MANAGER") {
+        if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
             reviewer = violationOwner
         }
         // Update existing campaign using API
@@ -864,57 +942,59 @@ export class IdnClient {
             id: campaignId,
             jsonPatchOperation: [
                 {
-                    "op": "replace",
-                    "path": "/name",
-                    "value": policyConfig.certificationName
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/name",
+                    value: policyConfig.certificationName
                 },
                 {
-                    "op": "replace",
-                    "path": "/description",
-                    "value": policyConfig.certificationDescription
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/description",
+                    value: policyConfig.certificationDescription
                 },
                 {
-                    "op": "replace",
-                    "path": "/deadlineDuration",
-                    "value": this.campaignDuration
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/deadlineDuration",
+                    value: this.campaignDuration
                 },
                 {
-                    "op": "replace",
-                    "path": "/campaign/name",
-                    "value": policyConfig.certificationName
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/campaign/name",
+                    value: policyConfig.certificationName
                 },
                 {
-                    "op": "replace",
-                    "path": "/campaign/description",
-                    "value": policyConfig.certificationDescription
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/campaign/description",
+                    value: policyConfig.certificationDescription
                 },
                 {
-                    "op": "replace",
-                    "path": "/campaign/searchCampaignInfo/description",
-                    "value": policyConfig.certificationDescription
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/campaign/searchCampaignInfo/description",
+                    value: policyConfig.certificationDescription
                 },
                 {
-                    "op": "replace",
-                    "path": "/campaign/searchCampaignInfo/reviewer",
-                    "value": reviewer
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/campaign/searchCampaignInfo/reviewer",
+                    value: reviewer
                 },
                 {
-                    "op": "replace",
-                    "path": "/campaign/searchCampaignInfo/query",
-                    "value": policyQuery
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/campaign/searchCampaignInfo/query",
+                    value: policyQuery
                 },
                 {
-                    "op": "replace",
-                    "path": "/campaign/searchCampaignInfo/accessConstraints",
-                    "value": accessConstraints
+                    op: JsonPatchOperationOpEnum.Replace,
+                    path: "/campaign/searchCampaignInfo/accessConstraints",
+                    value: accessConstraints
                 }
             ]
         }
         try {
             const newCampaign = await certsApi.patchCampaignTemplate(patchCampaignRequest)
         } catch (err) {
-            errorMessage = `Error updating existing Campaign using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(patchCampaignRequest)}`
+            errorMessage = `Error updating existing Campaign using Certification-Campaigns API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(patchCampaignRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return errorMessage
     }
@@ -930,8 +1010,10 @@ export class IdnClient {
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
         } catch (err) {
-            errorMessage = `Error setting campaign schedule using Certification-Campaigns API ${JSON.stringify(err)} with request: ${JSON.stringify(setCampaignScheduleRequest)}`
+            errorMessage = `Error setting campaign schedule using Certification-Campaigns API ${JSON.stringify(err)}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(setCampaignScheduleRequest)}`
             logger.error(errorMessage, err)
+            logger.debug(debugMessage)
         }
         return errorMessage
     }
@@ -976,7 +1058,7 @@ export class IdnClient {
             policyImpl.attributes.leftHandEntitlementCount = query1Entitlemnts.length
             policyImpl.attributes.rightHandEntitlementCount = query2Entitlemnts.length
 
-            // Check if either side of the query exceeds the IdentityNow limits
+            // Check if either side of the query exceeds the Identity Security Cloud limits
             if (query1Entitlemnts.length == 0) {
                 canProcess = false
                 errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] returns no entitlements`)
@@ -986,14 +1068,14 @@ export class IdnClient {
                 errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] returns no entitlements`)
             }
 
-            // Check if either side of the query exceeds the IdentityNow limits
-            if (query1Entitlemnts.length > maxEntitlementsPerPolicySide) {
+            // Check if either side of the query exceeds the Identity Security Cloud limits
+            if (query1Entitlemnts.length > this.maxEntitlementsPerPolicySide) {
                 canProcess = false
-                errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] result exceeds IdentityNow limit of ${maxEntitlementsPerPolicySide} entitlements`)
+                errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] result exceeds Identity Security Cloud limit of ${this.maxEntitlementsPerPolicySide} entitlements`)
             }
-            if (query2Entitlemnts.length > maxEntitlementsPerPolicySide) {
+            if (query2Entitlemnts.length > this.maxEntitlementsPerPolicySide) {
                 canProcess = false
-                errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] result exceeds IdentityNow limit of ${maxEntitlementsPerPolicySide} entitlements`)
+                errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] result exceeds Identity Security Cloud limit of ${this.maxEntitlementsPerPolicySide} entitlements`)
             }
 
             // Prepare Policy Owner refereneces
@@ -1007,7 +1089,7 @@ export class IdnClient {
             // Prepare Violation Owner refereneces
             const violationOwner = await this.resolveViolationOwner(policyConfig)
             // Error if Violation Owner cannot be resolved/found
-            if (!violationOwner && policyConfig.violationOwnerType != "MANAGER") {
+            if (!violationOwner && policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
                 canProcess = false
                 errorMessages.push(`Unable to resolve Violation Manager. Type: ${policyConfig.violationOwnerType}, Value: ${policyConfig.violationOwner}`)
             }
@@ -1104,10 +1186,10 @@ export class IdnClient {
                 canProcess = true
                 let campaignId = ""
 
-                // Ensure the total number of access items did not exceed IdentityNow limits
-                if (totalCount > maxAccessItemsPerCampaign) {
+                // Ensure the total number of access items did not exceed Identity Security Cloud limits
+                if (totalCount > this.maxAccessItemsPerCampaign) {
                     canProcess = false
-                    errorMessages.push(`Total number of access items to review exceeds IdentityNow limit of ${maxAccessItemsPerCampaign} access items.`)
+                    errorMessages.push(`Total number of access items to review exceeds Identity Security Cloud limit of ${this.maxAccessItemsPerCampaign} access items.`)
                 }
 
                 // Ensure a proper certification campaign name and description have been provided
@@ -1220,19 +1302,19 @@ export class IdnClient {
         for (const policyConfigObject of policyConfigs) {
             let policyConfig = new PolicyConfig(policyConfigObject)
             // Only Process SOD policies for now
-            if (policyConfig.policyType == "SOD") {
+            if (policyConfig.policyType == sodPolicyType) {
                 policyImpls.push(this.processSodPolicyConfig(policyConfig))
             }
         }
         return policyImpls
     }
 
-    async getAccount(identity: string): Promise<any> {
+    async getAccount(identity: string): Promise<PolicyImpl | undefined> {
         const policyConfigObject = await this.getPolicyConfigByName(identity)
         if (policyConfigObject) {
             let policyConfig = new PolicyConfig(policyConfigObject)
             // Only Process SOD policies for now
-            if (policyConfig.policyType == "SOD") {
+            if (policyConfig.policyType == sodPolicyType) {
                 return this.processSodPolicyConfig(policyConfig)
             }
         }

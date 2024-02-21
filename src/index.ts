@@ -34,16 +34,23 @@ export const connector = async () => {
         })
         .stdAccountList(async (context: Context, input: StdAccountListInput, res: Response<StdAccountListOutput>) => {
             const accounts = await idnClient.getAllAccounts()
-            
+
             logger.info(`stdAccountList sent ${accounts.length} accounts`)
             for (const account of accounts) {
                 res.send(await account)
             }
         })
         .stdAccountRead(async (context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {
-            const account = await idnClient.getAccount(input.identity)
-
             logger.info(`stdAccountRead read account : ${input.identity}`)
-            res.send(account)
+            const account = await idnClient.getAccount(input.identity)
+            if (account) {
+                res.send(account)
+            } else {
+                logger.debug(`stdAccountRead could not find account : ${input.identity}`)
+                res.send({
+                    identity: input.identity,
+                    attributes: {}
+                })
+            }
         })
 }

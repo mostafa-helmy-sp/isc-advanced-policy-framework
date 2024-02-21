@@ -120,6 +120,25 @@
 							"type": "text"
 						}
 					]
+				},
+				{
+					"type": "section",
+					"sectionTitle": "Limits",
+					"sectionHelpMessage": "Provide the known values for your tenant's policy and campaign limits.",
+					"items": [
+						{
+							"key": "maxEntitlementsPerPolicySide",
+							"label": "Max Entitlements per Policy Query",
+							"helpText": "The maximum number of entitlements allowed per SOD policy list by Identity Security Cloud. The default value is 400 if not specified.",
+							"type": "number"
+						},
+						{
+							"key": "maxAccessItemsPerCampaign",
+							"label": "Max Access Items per Campaign",
+							"helpText": "The maximum number of access items allowed per Certification Campaign by Identity Security Cloud. The default value is 10000 if not specified.",
+							"type": "number"
+						}
+					]
 				}
 			]
 		},

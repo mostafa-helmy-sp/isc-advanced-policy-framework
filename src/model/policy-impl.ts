@@ -1,13 +1,13 @@
-import { Attributes } from "@sailpoint/connector-sdk"
+import { Attributes, Key, SimpleKey, StdAccountListOutput, StdAccountReadOutput } from "@sailpoint/connector-sdk"
 
-export class PolicyImpl {
-    identity: string
-    uuid: string
+export class PolicyImpl implements StdAccountListOutput, StdAccountReadOutput {
+    identity?: string | undefined
+    key?: Key | undefined
     attributes: Attributes
 
     constructor(policyName: string) {
         this.identity = policyName
-        this.uuid = policyName
+        this.key = SimpleKey(policyName)
         this.attributes = {
             policyName: policyName,
             policyQuery: "",
