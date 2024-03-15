@@ -41,6 +41,7 @@ import {
     SODPolicyApiDeleteSodPolicyRequest,
     Schedule,
     ScheduleType,
+    ScheduleTypeEnum,
     ScheduleHoursTypeEnum,
     ScheduleDaysTypeEnum,
     CampaignTemplate,
@@ -53,12 +54,7 @@ import {
     CertificationCampaignsApiListCampaignTemplatesRequest,
     CertificationCampaignsApiDeleteCampaignTemplateRequest,
     CertificationCampaignsApiCreateCampaignTemplateRequest,
-    CertificationCampaignsBetaApi,
-    CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest,
-    ScheduleBeta,
-    ScheduleBetaTypeEnum,
-    ScheduleHoursBetaTypeEnum,
-    ScheduleDaysBetaTypeEnum
+    CertificationCampaignsApiSetCampaignTemplateScheduleRequest
 } from "sailpoint-api-client"
 import { PolicyConfig } from "./model/policy-config"
 import { PolicyImpl } from "./model/policy-impl"
@@ -347,7 +343,7 @@ export class IdnClient {
             sort: ["id"]
         }
         try {
-            const entitlements: EntitlementDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
+            const entitlements = (await Paginator.paginateSearchApi(searchApi, search)).data as EntitlementDocument[]
             return entitlements
         } catch (err) {
             let errorMessage = `Error finding entitlements using Search API ${JSON.stringify(err)}`
@@ -635,29 +631,29 @@ export class IdnClient {
             return schedule
     }
 
-    buildCampaignSchedule(scheduleConfig: string): ScheduleBeta | undefined {
+    buildCampaignSchedule(scheduleConfig: string): Schedule | undefined {
         let schedule
-        if (scheduleConfig == ScheduleBetaTypeEnum.Weekly) {
+        if (scheduleConfig == ScheduleTypeEnum.Weekly) {
             schedule = {
-                type: ScheduleBetaTypeEnum.Weekly,
+                type: ScheduleTypeEnum.Weekly,
                 hours: {
-                    type: ScheduleHoursBetaTypeEnum.List,
+                    type: ScheduleHoursTypeEnum.List,
                     values: this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
                 },
                 days: {
-                    type: ScheduleDaysBetaTypeEnum.List,
+                    type: ScheduleDaysTypeEnum.List,
                     values: this.weeklyScheduleDay.slice(0, maxWeeklyDaysPerCampaignSchedule)
                 }
             }
-        } else if (scheduleConfig == ScheduleBetaTypeEnum.Monthly) {
+        } else if (scheduleConfig == ScheduleTypeEnum.Monthly) {
             schedule = {
-                type: ScheduleBetaTypeEnum.Monthly,
+                type: ScheduleTypeEnum.Monthly,
                 hours: {
-                    type: ScheduleHoursBetaTypeEnum.List,
+                    type: ScheduleHoursTypeEnum.List,
                     values: this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
                 },
                 days: {
-                    type: ScheduleDaysBetaTypeEnum.List,
+                    type: ScheduleDaysTypeEnum.List,
                     values: this.monthlyScheduleDay.slice(0, maxMonthlyDaysPerCampaignSchedule)
                 }
             }
@@ -999,13 +995,13 @@ export class IdnClient {
         return errorMessage
     }
 
-    async setCampaignSchedule(campaignId: string, campaignSchedule: ScheduleBeta): Promise<string> {
+    async setCampaignSchedule(campaignId: string, campaignSchedule: Schedule): Promise<string> {
         let errorMessage = ""
         // Update the Campaign Schedule via API
-        const certsApi = new CertificationCampaignsBetaApi(this.apiConfig)
-        const setCampaignScheduleRequest: CertificationCampaignsBetaApiSetCampaignTemplateScheduleRequest = {
+        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const setCampaignScheduleRequest: CertificationCampaignsApiSetCampaignTemplateScheduleRequest = {
             id: campaignId,
-            scheduleBeta: campaignSchedule
+            schedule: campaignSchedule
         }
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
