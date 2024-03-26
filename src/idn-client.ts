@@ -110,9 +110,7 @@ export class IdnClient {
             // retryDelay: (retryCount) => { return retryCount * 2000; },
             retryDelay: (retryCount, error) => axiosRetry.exponentialDelay(retryCount, error, 2000),
             retryCondition: (error) => {
-                return axiosRetry.isNetworkError(error) ||
-                    axiosRetry.isRetryableError(error) ||
-                    error.response?.status === 429;
+                return error.response?.status === 429;
             },
             onRetry: (retryCount, error, requestConfig) => {
                 logger.debug(`Retrying API [${requestConfig.url}] due to request error: [${error}]. Try number [${retryCount}]`)
@@ -121,53 +119,13 @@ export class IdnClient {
         // configure the rest of the source parameters
         this.policyConfigSourceName = config.policyConfigSourceName
         this.policySourceName = config.policySourceName
-        if (config.identityResolutionAttribute) {
-            this.identityResolutionAttribute = config.identityResolutionAttribute
-        } else {
-            this.identityResolutionAttribute = defaultIdentityResolutionAttribute
-        }
-        if (config.hourlyScheduleDay) {
-            if (Array.isArray(config.hourlyScheduleDay)) {
-                this.hourlyScheduleDay = config.hourlyScheduleDay
-            } else {
-                this.hourlyScheduleDay = [config.hourlyScheduleDay]
-            }
-        } else {
-            this.hourlyScheduleDay = defaultHourlyScheduleDay
-        }
-        if (config.weeklyScheduleDay) {
-            if (Array.isArray(config.weeklyScheduleDay)) {
-                this.weeklyScheduleDay = config.weeklyScheduleDay
-            } else {
-                this.weeklyScheduleDay = [config.weeklyScheduleDay]
-            }
-        } else {
-            this.weeklyScheduleDay = defaultWeeklyScheduleDay
-        }
-        if (config.monthlyScheduleDay) {
-            if (Array.isArray(config.monthlyScheduleDay)) {
-                this.monthlyScheduleDay = config.monthlyScheduleDay
-            } else {
-                this.monthlyScheduleDay = [config.monthlyScheduleDay]
-            }
-        } else {
-            this.monthlyScheduleDay = defaultMonthlyScheduleDay
-        }
-        if (config.campaignDuration) {
-            this.campaignDuration = config.campaignDuration
-        } else {
-            this.campaignDuration = defaultCampaignDuration
-        }
-        if (config.maxEntitlementsPerPolicySide) {
-            this.maxEntitlementsPerPolicySide = config.maxEntitlementsPerPolicySide
-        } else {
-            this.maxEntitlementsPerPolicySide = defaultMaxEntitlementsPerPolicySide
-        }
-        if (config.maxAccessItemsPerCampaign) {
-            this.maxAccessItemsPerCampaign = config.maxAccessItemsPerCampaign
-        } else {
-            this.maxAccessItemsPerCampaign = defaultMaxAccessItemsPerCampaign
-        }
+        this.identityResolutionAttribute = config.identityResolutionAttribute ?? defaultIdentityResolutionAttribute
+        this.hourlyScheduleDay = config.hourlyScheduleDay ? (Array.isArray(config.hourlyScheduleDay) ? config.hourlyScheduleDay : [config.hourlyScheduleDay]) : defaultHourlyScheduleDay
+        this.weeklyScheduleDay = config.weeklyScheduleDay ? (Array.isArray(config.weeklyScheduleDay) ? config.weeklyScheduleDay : [config.weeklyScheduleDay]) : defaultWeeklyScheduleDay
+        this.monthlyScheduleDay = config.monthlyScheduleDay ? (Array.isArray(config.monthlyScheduleDay) ? config.monthlyScheduleDay : [config.monthlyScheduleDay]) : defaultMonthlyScheduleDay
+        this.campaignDuration = config.campaignDuration || defaultCampaignDuration
+        this.maxEntitlementsPerPolicySide = config.maxEntitlementsPerPolicySide || defaultMaxEntitlementsPerPolicySide
+        this.maxAccessItemsPerCampaign = config.maxAccessItemsPerCampaign || defaultMaxAccessItemsPerCampaign
     }
 
     async getPolicyConfigSourceId(): Promise<string | undefined> {
@@ -185,10 +143,10 @@ export class IdnClient {
                 if (sources.data.length > 0) {
                     this.policyConfigSourceId = sources.data[0].id
                 }
-            } catch (err) {
-                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API ${JSON.stringify(err)}`
-                let debugMessage = `Failed Sources API request: ${JSON.stringify(sourcesRequest)}`
-                logger.error(errorMessage, err)
+            } catch (error) {
+                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API: ${(error as Error).message}`
+                let debugMessage = `Failed Sources API request: ${JSON.stringify(error)}`
+                logger.error(sourcesRequest, errorMessage)
                 logger.debug(debugMessage)
                 throw new ConnectorError(errorMessage)
             }
@@ -208,13 +166,13 @@ export class IdnClient {
             filters: filter
         }
         try {
-            const accounts = await accountsApi.listAccounts(accountsRequest)
+            const accounts = await Paginator.paginate(accountsApi, accountsApi.listAccounts, { filters: filter })
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data
-        } catch (err) {
-            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API ${JSON.stringify(err)}`
-            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(accountsRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API: ${(error as Error).message}`
+            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(error)}`
+            logger.error(accountsRequest, errorMessage)
             logger.debug(debugMessage)
             throw new ConnectorError(errorMessage)
         }
@@ -233,10 +191,10 @@ export class IdnClient {
             const accounts = await accountsApi.listAccounts(accountsRequest)
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data[0]
-        } catch (err) {
-            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API ${JSON.stringify(err)}`
-            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(accountsRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API: ${(error as Error).message}`
+            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(error)}`
+            logger.error(accountsRequest, errorMessage)
             logger.debug(debugMessage)
             throw new ConnectorError(errorMessage)
         }
@@ -256,10 +214,10 @@ export class IdnClient {
             } else {
                 return existingPolicy.data[0]
             }
-        } catch (err) {
-            let errorMessage = `Error finding existing Policy using SOD-Policies API ${JSON.stringify(err)}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(findPolicyRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding existing Policy using SOD-Policies API: ${(error as Error).message}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            logger.error(findPolicyRequest, errorMessage)
             logger.debug(debugMessage)
             return
         }
@@ -279,10 +237,10 @@ export class IdnClient {
             } else {
                 return existingCampaign.data[0]
             }
-        } catch (err) {
-            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(findCampaignRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API: ${(error as Error).message}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            logger.error(findCampaignRequest, errorMessage)
             logger.debug(debugMessage)
             return
         }
@@ -345,10 +303,10 @@ export class IdnClient {
         try {
             const entitlements = (await Paginator.paginateSearchApi(searchApi, search)).data as EntitlementDocument[]
             return entitlements
-        } catch (err) {
-            let errorMessage = `Error finding entitlements using Search API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding entitlements using Search API: ${(error as Error).message}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            logger.error(search, errorMessage)
             logger.debug(debugMessage)
             return []
         }
@@ -380,10 +338,10 @@ export class IdnClient {
         try {
             const accessProfiles: AccessProfileDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
             return accessProfiles
-        } catch (err) {
-            let errorMessage = `Error finding access profiles using Search API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding access profiles using Search API: ${(error as Error).message}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            logger.error(search, errorMessage)
             logger.debug(debugMessage)
             return []
         }
@@ -424,10 +382,10 @@ export class IdnClient {
         try {
             const roles: RoleDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
             return roles
-        } catch (err) {
-            let errorMessage = `Error finding roles using Search API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding roles using Search API: ${(error as Error).message}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            logger.error(search, errorMessage)
             logger.debug(debugMessage)
             return []
         }
@@ -467,10 +425,10 @@ export class IdnClient {
                 const identity = identities.data[0]
                 return { id: identity.id, name: identity.name, type: identity._type.toUpperCase() }
             }
-        } catch (err) {
-            let errorMessage = `Error finding identity using Search API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(search)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding identity using Search API: ${(error as Error).message}`
+            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            logger.error(search, errorMessage)
             logger.debug(debugMessage)
             return
         }
@@ -492,10 +450,10 @@ export class IdnClient {
                 const govGroup = existingGovGroup.data[0]
                 return { id: govGroup.id, name: govGroup.name, type: DtoType.GovernanceGroup }
             }
-        } catch (err) {
-            let errorMessage = `Error finding Governance Group using Governance-Groups API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(findGovGroupRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding Governance Group using Governance-Groups API: ${(error as Error).message}`
+            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(error)}`
+            logger.error(findGovGroupRequest, errorMessage)
             logger.debug(debugMessage)
             return
         }
@@ -507,7 +465,7 @@ export class IdnClient {
             workgroupId: govGroupId
         }
         try {
-            const govGroupMembers = await govGroupApi.listWorkgroupMembers(findGovGroupMembersRequest)
+            const govGroupMembers = await Paginator.paginate(govGroupApi, govGroupApi.listWorkgroupMembers, { workgroupId: govGroupId })
             // Check if no governance group members exist
             if (govGroupMembers.data.length == 0) {
                 return []
@@ -517,10 +475,10 @@ export class IdnClient {
                 govGroupMembers.data.forEach(govGroupMember => members.push({ id: govGroupMember.id, type: DtoType.Identity, name: govGroupMember.name }))
                 return members
             }
-        } catch (err) {
-            let errorMessage = `Error finding Governance Group members using Governance-Groups API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(findGovGroupMembersRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            let errorMessage = `Error finding Governance Group members using Governance-Groups API: ${(error as Error).message}`
+            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(error)}`
+            logger.error(findGovGroupMembersRequest, errorMessage)
             logger.debug(debugMessage)
             return []
         }
@@ -713,10 +671,10 @@ export class IdnClient {
         }
         try {
             await policyApi.deleteSodPolicy(deletePolicyRequest)
-        } catch (err) {
-            errorMessage = `Error deleting existing policy using SOD-Policies API ${JSON.stringify(err)}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(deletePolicyRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error deleting existing policy using SOD-Policies API: ${(error as Error).message}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            logger.error(deletePolicyRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return errorMessage
@@ -752,10 +710,10 @@ export class IdnClient {
             if (newPolicy.data.policyQuery) {
                 policyQuery = newPolicy.data.policyQuery
             }
-        } catch (err) {
-            errorMessage = `Error creating a new Policy using SOD-Policies API ${JSON.stringify(err)}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(newPolicyRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error creating a new Policy using SOD-Policies API: ${(error as Error).message}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            logger.error(newPolicyRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return [errorMessage, policyId, policyQuery]
@@ -827,10 +785,10 @@ export class IdnClient {
             if (patchedPolicy.data.policyQuery) {
                 policyQuery = patchedPolicy.data.policyQuery
             }
-        } catch (err) {
-            errorMessage = `Error updating existing Policy using SOD-Policies API ${JSON.stringify(err)}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(patchPolicyRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error updating existing Policy using SOD-Policies API: ${(error as Error).message}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            logger.error(patchPolicyRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return [errorMessage, policyQuery]
@@ -851,10 +809,10 @@ export class IdnClient {
         }
         try {
             const newPolicySchedule = await policyApi.putPolicySchedule(setPolicyScheduleRequest)
-        } catch (err) {
-            errorMessage = `Error setting Policy Schedule using SOD-Policies API ${JSON.stringify(err)}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(setPolicyScheduleRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error setting Policy Schedule using SOD-Policies API: ${(error as Error).message}`
+            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            logger.error(setPolicyScheduleRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return errorMessage
@@ -869,10 +827,10 @@ export class IdnClient {
         }
         try {
             await certsApi.deleteCampaignTemplate(deleteCampaignTemplareRequest)
-        } catch (err) {
-            errorMessage = `Error deleting existing campaign using Certification-Campaigns API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(deleteCampaignTemplareRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error deleting existing campaign using Certification-Campaigns API: ${(error as Error).message}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            logger.error(deleteCampaignTemplareRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return errorMessage
@@ -917,10 +875,10 @@ export class IdnClient {
             if (newCampaign.data.id) {
                 campaignId = newCampaign.data.id
             }
-        } catch (err) {
-            errorMessage = `Error creating new Campaign using Certification-Campaigns API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(createCampaignRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error creating new Campaign using Certification-Campaigns API: ${(error as Error).message}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            logger.error(createCampaignRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return [errorMessage, campaignId]
@@ -986,10 +944,10 @@ export class IdnClient {
         }
         try {
             const newCampaign = await certsApi.patchCampaignTemplate(patchCampaignRequest)
-        } catch (err) {
-            errorMessage = `Error updating existing Campaign using Certification-Campaigns API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(patchCampaignRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error updating existing Campaign using Certification-Campaigns API: ${(error as Error).message}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            logger.error(patchCampaignRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return errorMessage
@@ -1005,10 +963,10 @@ export class IdnClient {
         }
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
-        } catch (err) {
-            errorMessage = `Error setting campaign schedule using Certification-Campaigns API ${JSON.stringify(err)}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(setCampaignScheduleRequest)}`
-            logger.error(errorMessage, err)
+        } catch (error) {
+            errorMessage = `Error setting campaign schedule using Certification-Campaigns API: ${(error as Error).message}`
+            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            logger.error(setCampaignScheduleRequest, errorMessage)
             logger.debug(debugMessage)
         }
         return errorMessage
