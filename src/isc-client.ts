@@ -75,18 +75,22 @@ var defaultCampaignDuration = "P2W"
 var defaultMaxEntitlementsPerPolicySide = 400
 var defaultMaxAccessItemsPerCampaign = 10000
 
-// Set Connector Values
-var sodPolicyType = "SOD"
-var actionSchedulePolicy = "REPORT"
-var actionCertifyViolations = "CERTIFY"
-var actionDeleteAll = "DELETE_ALL"
-var actionDeleteCampaign = "DELETE_CAMPAIGN"
+export enum PolicyType {
+    SOD = "SOD"
+}
 
-export class IdnClient {
+export enum PolicyAction {
+    REPORT = "REPORT",
+    CERTIFY = "CERTIFY",
+    DELETE_ALL = "DELETE_ALL",
+    DELETE_CAMPAIGN = "DELETE_CAMPAIGN"
+}
 
+export class IscClient {
+
+    private readonly config: any
     private readonly apiConfig: Configuration
     private readonly policyConfigSourceName: string
-    private readonly policySourceName?: string
     private policyConfigSourceId?: string
     private identityResolutionAttribute: string
     private hourlyScheduleDay: string[]
@@ -95,19 +99,19 @@ export class IdnClient {
     private campaignDuration: string
     private maxEntitlementsPerPolicySide: number
     private maxAccessItemsPerCampaign: number
+    private parallelProcessing: boolean
 
-    constructor(config: any) {
-        // configure the SailPoint SDK API Client
+    createApiConfig() {
+        // Configure the SailPoint SDK API Client
         const ConfigurationParameters: ConfigurationParameters = {
-            baseurl: config.apiUrl,
-            clientId: config.clientId,
-            clientSecret: config.clientSecret,
-            tokenUrl: config.apiUrl + tokenUrlPath
+            baseurl: this.config.apiUrl,
+            clientId: this.config.clientId,
+            clientSecret: this.config.clientSecret,
+            tokenUrl: this.config.apiUrl + tokenUrlPath
         }
-        this.apiConfig = new Configuration(ConfigurationParameters)
-        this.apiConfig.retriesConfig = {
+        const apiConfig = new Configuration(ConfigurationParameters)
+        apiConfig.retriesConfig = {
             retries: 10,
-            // retryDelay: (retryCount) => { return retryCount * 2000; },
             retryDelay: (retryCount, error) => axiosRetry.exponentialDelay(retryCount, error, 2000),
             retryCondition: (error) => {
                 return error.response?.status === 429;
@@ -116,9 +120,14 @@ export class IdnClient {
                 logger.debug(`Retrying API [${requestConfig.url}] due to request error: [${error}]. Try number [${retryCount}]`)
             }
         }
+        return apiConfig
+    }
+
+    constructor(config: any) {
+        this.config = config
+        this.apiConfig = this.createApiConfig()
         // configure the rest of the source parameters
         this.policyConfigSourceName = config.policyConfigSourceName
-        this.policySourceName = config.policySourceName
         this.identityResolutionAttribute = config.identityResolutionAttribute ?? defaultIdentityResolutionAttribute
         this.hourlyScheduleDay = config.hourlyScheduleDay ? (Array.isArray(config.hourlyScheduleDay) ? config.hourlyScheduleDay : [config.hourlyScheduleDay]) : defaultHourlyScheduleDay
         this.weeklyScheduleDay = config.weeklyScheduleDay ? (Array.isArray(config.weeklyScheduleDay) ? config.weeklyScheduleDay : [config.weeklyScheduleDay]) : defaultWeeklyScheduleDay
@@ -126,6 +135,11 @@ export class IdnClient {
         this.campaignDuration = config.campaignDuration || defaultCampaignDuration
         this.maxEntitlementsPerPolicySide = config.maxEntitlementsPerPolicySide || defaultMaxEntitlementsPerPolicySide
         this.maxAccessItemsPerCampaign = config.maxAccessItemsPerCampaign || defaultMaxAccessItemsPerCampaign
+        this.parallelProcessing = config.parallelProcessing || false
+    }
+
+    isParallelProcessing(): boolean {
+        return this.parallelProcessing
     }
 
     async getPolicyConfigSourceId(): Promise<string | undefined> {
@@ -144,10 +158,9 @@ export class IdnClient {
                     this.policyConfigSourceId = sources.data[0].id
                 }
             } catch (error) {
-                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API: ${(error as Error).message}`
-                let debugMessage = `Failed Sources API request: ${JSON.stringify(error)}`
+                let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API: ${error instanceof Error ? error.message : error}`
                 logger.error(sourcesRequest, errorMessage)
-                logger.debug(debugMessage)
+                logger.debug(error, "Failed Sources API request")
                 throw new ConnectorError(errorMessage)
             }
         }
@@ -170,10 +183,9 @@ export class IdnClient {
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data
         } catch (error) {
-            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API: ${(error as Error).message}`
-            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API: ${error instanceof Error ? error.message : error}`
             logger.error(accountsRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed ListAccounts API request")
             throw new ConnectorError(errorMessage)
         }
     }
@@ -192,17 +204,16 @@ export class IdnClient {
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data[0]
         } catch (error) {
-            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API: ${(error as Error).message}`
-            let debugMessage = `Failed ListAccounts API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API: ${error instanceof Error ? error.message : error}`
             logger.error(accountsRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed ListAccounts API request")
             throw new ConnectorError(errorMessage)
         }
     }
 
-    async findExistingPolicy(policyConfig: PolicyConfig): Promise<SodPolicy | undefined> {
+    async findExistingPolicy(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<SodPolicy | undefined> {
         const filter = `name eq "${policyConfig.policyName}"`
-        const policyApi = new SODPolicyApi(this.apiConfig)
+        const policyApi = new SODPolicyApi(apiConfig)
         const findPolicyRequest: SODPolicyApiListSodPoliciesRequest = {
             filters: filter
         }
@@ -215,17 +226,16 @@ export class IdnClient {
                 return existingPolicy.data[0]
             }
         } catch (error) {
-            let errorMessage = `Error finding existing Policy using SOD-Policies API: ${(error as Error).message}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding existing Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(findPolicyRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed SOD-Policies API request")
             return
         }
     }
 
-    async findExistingCampaign(policyConfig: PolicyConfig): Promise<CampaignTemplate | undefined> {
+    async findExistingCampaign(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<CampaignTemplate | undefined> {
         const filter = `name eq "${policyConfig.certificationName}"`
-        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const certsApi = new CertificationCampaignsApi(apiConfig)
         const findCampaignRequest: CertificationCampaignsApiListCampaignTemplatesRequest = {
             filters: filter
         }
@@ -238,10 +248,9 @@ export class IdnClient {
                 return existingCampaign.data[0]
             }
         } catch (error) {
-            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API: ${(error as Error).message}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding existing Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(findCampaignRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Certification-Campaigns API request")
             return
         }
     }
@@ -280,8 +289,8 @@ export class IdnClient {
         return [... new Set([...items1, ...items2])]
     }
 
-    async searchEntitlementsByQuery(query: string): Promise<EntitlementDocument[]> {
-        const searchApi = new SearchApi(this.apiConfig)
+    async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<EntitlementDocument[]> {
+        const searchApi = new SearchApi(apiConfig)
         const search: Search = {
             indices: [
                 Index.Entitlements
@@ -304,20 +313,19 @@ export class IdnClient {
             const entitlements = (await Paginator.paginateSearchApi(searchApi, search)).data as EntitlementDocument[]
             return entitlements
         } catch (error) {
-            let errorMessage = `Error finding entitlements using Search API: ${(error as Error).message}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding entitlements using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Search API request")
             return []
         }
     }
 
-    async searchAccessProfilesbyEntitlements(entitlements: any[]): Promise<AccessProfileDocument[]> {
+    async searchAccessProfilesbyEntitlements(apiConfig: Configuration, entitlements: any[]): Promise<AccessProfileDocument[]> {
         if (!entitlements || entitlements.length == 0) {
             return []
         }
         const query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
-        const searchApi = new SearchApi(this.apiConfig)
+        const searchApi = new SearchApi(apiConfig)
         const search: Search = {
             indices: [
                 Index.Accessprofiles
@@ -339,15 +347,14 @@ export class IdnClient {
             const accessProfiles: AccessProfileDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
             return accessProfiles
         } catch (error) {
-            let errorMessage = `Error finding access profiles using Search API: ${(error as Error).message}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding access profiles using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Search API request")
             return []
         }
     }
 
-    async searchRolesByAccessProfilesOrEntitlements(entitlements: any[], accessProfiles: any[]): Promise<RoleDocument[]> {
+    async searchRolesByAccessProfilesOrEntitlements(apiConfig: Configuration, entitlements: any[], accessProfiles: any[]): Promise<RoleDocument[]> {
         let query
         if (entitlements && entitlements.length > 0) {
             query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
@@ -362,7 +369,7 @@ export class IdnClient {
         if (!query) {
             return []
         }
-        const searchApi = new SearchApi(this.apiConfig)
+        const searchApi = new SearchApi(apiConfig)
         const search: Search = {
             indices: [
                 Index.Roles
@@ -383,16 +390,15 @@ export class IdnClient {
             const roles: RoleDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
             return roles
         } catch (error) {
-            let errorMessage = `Error finding roles using Search API: ${(error as Error).message}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding roles using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Search API request")
             return []
         }
     }
 
-    async searchIdentityByAttribute(attribute: string, value: string): Promise<any> {
-        const searchApi = new SearchApi(this.apiConfig)
+    async searchIdentityByAttribute(apiConfig: Configuration, attribute: string, value: string): Promise<any> {
+        const searchApi = new SearchApi(apiConfig)
         let query = ""
         if (attribute === "name" || attribute === "employeeNumber" || attribute === "id") {
             query = `${attribute}:"${value}"`
@@ -426,17 +432,16 @@ export class IdnClient {
                 return { id: identity.id, name: identity.name, type: identity._type.toUpperCase() }
             }
         } catch (error) {
-            let errorMessage = `Error finding identity using Search API: ${(error as Error).message}`
-            let debugMessage = `Failed Search API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding identity using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Search API request")
             return
         }
     }
 
-    async searchGovGroupByName(govGroupName: string): Promise<any> {
+    async searchGovGroupByName(apiConfig: Configuration, govGroupName: string): Promise<any> {
         const filter = `name eq "${govGroupName}"`
-        const govGroupApi = new GovernanceGroupsBetaApi(this.apiConfig)
+        const govGroupApi = new GovernanceGroupsBetaApi(apiConfig)
         const findGovGroupRequest: GovernanceGroupsBetaApiListWorkgroupsRequest = {
             filters: filter
         }
@@ -451,16 +456,15 @@ export class IdnClient {
                 return { id: govGroup.id, name: govGroup.name, type: DtoType.GovernanceGroup }
             }
         } catch (error) {
-            let errorMessage = `Error finding Governance Group using Governance-Groups API: ${(error as Error).message}`
-            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding Governance Group using Governance-Groups API: ${error instanceof Error ? error.message : error}`
             logger.error(findGovGroupRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Governance-Groups API request")
             return
         }
     }
 
-    async findGovGroupMembers(govGroupId: string): Promise<any[]> {
-        const govGroupApi = new GovernanceGroupsBetaApi(this.apiConfig)
+    async findGovGroupMembers(apiConfig: Configuration, govGroupId: string): Promise<any[]> {
+        const govGroupApi = new GovernanceGroupsBetaApi(apiConfig)
         const findGovGroupMembersRequest: GovernanceGroupsBetaApiListWorkgroupMembersRequest = {
             workgroupId: govGroupId
         }
@@ -476,10 +480,9 @@ export class IdnClient {
                 return members
             }
         } catch (error) {
-            let errorMessage = `Error finding Governance Group members using Governance-Groups API: ${(error as Error).message}`
-            let debugMessage = `Failed Governance-Groups API request: ${JSON.stringify(error)}`
+            let errorMessage = `Error finding Governance Group members using Governance-Groups API: ${error instanceof Error ? error.message : error}`
             logger.error(findGovGroupMembersRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Governance-Groups API request")
             return []
         }
     }
@@ -620,19 +623,19 @@ export class IdnClient {
             return schedule
     }
 
-    async resolvePolicyOwner(policyConfig: PolicyConfig): Promise<any> {
+    async resolvePolicyOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<any> {
         if (policyConfig.policyOwnerType == DtoType.Identity) {
-            return await this.searchIdentityByAttribute(this.identityResolutionAttribute, policyConfig.policyOwner)
+            return await this.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, policyConfig.policyOwner)
         } else if (policyConfig.policyOwnerType == DtoType.GovernanceGroup) {
-            return await this.searchGovGroupByName(policyConfig.policyOwner)
+            return await this.searchGovGroupByName(apiConfig, policyConfig.policyOwner)
         }
     }
 
-    async resolveViolationOwner(policyConfig: PolicyConfig): Promise<any> {
+    async resolveViolationOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<any> {
         if (policyConfig.violationOwnerType == DtoType.Identity && policyConfig.violationOwner) {
-            return await this.searchIdentityByAttribute(this.identityResolutionAttribute, policyConfig.violationOwner)
+            return await this.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, policyConfig.violationOwner)
         } else if (policyConfig.violationOwnerType == DtoType.GovernanceGroup && policyConfig.violationOwner) {
-            return await this.searchGovGroupByName(policyConfig.violationOwner)
+            return await this.searchGovGroupByName(apiConfig, policyConfig.violationOwner)
         }
     }
 
@@ -646,14 +649,14 @@ export class IdnClient {
         return violationOwnerConfig
     }
 
-    async resolvePolicyRecipients(policyConfig: PolicyConfig, violationOwner: any, policyOwner: any): Promise<any[]> {
+    async resolvePolicyRecipients(apiConfig: Configuration, policyConfig: PolicyConfig, violationOwner: any, policyOwner: any): Promise<any[]> {
         let recipients = []
         if (policyConfig.violationOwnerType == DtoType.Identity && policyConfig.violationOwner) {
             // Return the violation manager
             recipients = [violationOwner]
         } else if (policyConfig.violationOwnerType == DtoType.GovernanceGroup && policyConfig.violationOwner) {
             // Resolve governance group members
-            recipients = await this.findGovGroupMembers(violationOwner.id)
+            recipients = await this.findGovGroupMembers(apiConfig, violationOwner.id)
         }
         // Use the policy owner if no violation managers found
         if (!recipients || recipients.length == 0) {
@@ -662,31 +665,30 @@ export class IdnClient {
         return recipients
     }
 
-    async deletePolicy(policyId: string): Promise<string> {
+    async deletePolicy(apiConfig: Configuration, policyId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Policy via API
-        const policyApi = new SODPolicyApi(this.apiConfig)
+        const policyApi = new SODPolicyApi(apiConfig)
         const deletePolicyRequest: SODPolicyApiDeleteSodPolicyRequest = {
             id: policyId
         }
         try {
             await policyApi.deleteSodPolicy(deletePolicyRequest)
         } catch (error) {
-            errorMessage = `Error deleting existing policy using SOD-Policies API: ${(error as Error).message}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            errorMessage = `Error deleting existing policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(deletePolicyRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed SOD-Policies API request")
         }
         return errorMessage
     }
 
-    async createPolicy(policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyId: string, policyQuery: string]> {
+    async createPolicy(apiConfig: Configuration, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyId: string, policyQuery: string]> {
         let errorMessage = ""
         let policyId = ""
         let policyQuery = ""
         let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
         // Submit the new Policy via API
-        const policyApi = new SODPolicyApi(this.apiConfig)
+        const policyApi = new SODPolicyApi(apiConfig)
         const newPolicyRequest: SODPolicyApiCreateSodPolicyRequest = {
             sodPolicy: {
                 name: policyConfig.policyName,
@@ -711,20 +713,19 @@ export class IdnClient {
                 policyQuery = newPolicy.data.policyQuery
             }
         } catch (error) {
-            errorMessage = `Error creating a new Policy using SOD-Policies API: ${(error as Error).message}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            errorMessage = `Error creating a new Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(newPolicyRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed SOD-Policies API request")
         }
         return [errorMessage, policyId, policyQuery]
     }
 
-    async updatePolicy(existingPolicyId: string, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyQuery: string]> {
+    async updatePolicy(apiConfig: Configuration, existingPolicyId: string, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyQuery: string]> {
         let errorMessage = ""
         let policyQuery = ""
         let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
         // Submit the patch Policy via API
-        const policyApi = new SODPolicyApi(this.apiConfig)
+        const policyApi = new SODPolicyApi(apiConfig)
         const patchPolicyRequest: SODPolicyApiPatchSodPolicyRequest = {
             id: existingPolicyId,
             jsonPatchOperation: [
@@ -786,18 +787,17 @@ export class IdnClient {
                 policyQuery = patchedPolicy.data.policyQuery
             }
         } catch (error) {
-            errorMessage = `Error updating existing Policy using SOD-Policies API: ${(error as Error).message}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            errorMessage = `Error updating existing Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(patchPolicyRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed SOD-Policies API request")
         }
         return [errorMessage, policyQuery]
     }
 
-    async setPolicySchedule(policyId: string, policyConfig: PolicyConfig, policySchedule: any, policyRecipients: any): Promise<string> {
+    async setPolicySchedule(apiConfig: Configuration, policyId: string, policyConfig: PolicyConfig, policySchedule: any, policyRecipients: any): Promise<string> {
         let errorMessage = ""
         // Update the Policy Schedule via API
-        const policyApi = new SODPolicyApi(this.apiConfig)
+        const policyApi = new SODPolicyApi(apiConfig)
         const setPolicyScheduleRequest: SODPolicyApiPutPolicyScheduleRequest = {
             id: policyId,
             sodPolicySchedule: {
@@ -810,33 +810,31 @@ export class IdnClient {
         try {
             const newPolicySchedule = await policyApi.putPolicySchedule(setPolicyScheduleRequest)
         } catch (error) {
-            errorMessage = `Error setting Policy Schedule using SOD-Policies API: ${(error as Error).message}`
-            let debugMessage = `Failed SOD-Policies API request: ${JSON.stringify(error)}`
+            errorMessage = `Error setting Policy Schedule using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(setPolicyScheduleRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed SOD-Policies API request")
         }
         return errorMessage
     }
 
-    async deletePolicyCampaign(campaignId: string): Promise<string> {
+    async deletePolicyCampaign(apiConfig: Configuration, campaignId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Campaign via API
-        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const certsApi = new CertificationCampaignsApi(apiConfig)
         const deleteCampaignTemplareRequest: CertificationCampaignsApiDeleteCampaignTemplateRequest = {
             id: campaignId
         }
         try {
             await certsApi.deleteCampaignTemplate(deleteCampaignTemplareRequest)
         } catch (error) {
-            errorMessage = `Error deleting existing campaign using Certification-Campaigns API: ${(error as Error).message}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            errorMessage = `Error deleting existing campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(deleteCampaignTemplareRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Certification-Campaigns API request")
         }
         return errorMessage
     }
 
-    async createPolicyCampaign(policyConfig: PolicyConfig, policyQuery: string, accessConstraints: AccessConstraint[], violationOwner: CampaignAllOfSearchCampaignInfoReviewer | undefined, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
+    async createPolicyCampaign(apiConfig: Configuration, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: AccessConstraint[], violationOwner: CampaignAllOfSearchCampaignInfoReviewer | undefined, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
         let errorMessage = ""
         let campaignId = ""
         let reviewer
@@ -844,7 +842,7 @@ export class IdnClient {
             reviewer = violationOwner
         }
         // Create new campaign using API
-        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const certsApi = new CertificationCampaignsApi(apiConfig)
         const createCampaignRequest: CertificationCampaignsApiCreateCampaignTemplateRequest = {
             campaignTemplate: {
                 name: policyConfig.certificationName,
@@ -876,22 +874,21 @@ export class IdnClient {
                 campaignId = newCampaign.data.id
             }
         } catch (error) {
-            errorMessage = `Error creating new Campaign using Certification-Campaigns API: ${(error as Error).message}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            errorMessage = `Error creating new Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(createCampaignRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Certification-Campaigns API request")
         }
         return [errorMessage, campaignId]
     }
 
-    async updatePolicyCampaign(campaignId: string, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: any, violationOwner: any): Promise<string> {
+    async updatePolicyCampaign(apiConfig: Configuration, campaignId: string, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: any, violationOwner: any): Promise<string> {
         let errorMessage = ""
         let reviewer = null
         if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
             reviewer = violationOwner
         }
         // Update existing campaign using API
-        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const certsApi = new CertificationCampaignsApi(apiConfig)
         const patchCampaignRequest: CertificationCampaignsApiUpdateCampaignRequest = {
             id: campaignId,
             jsonPatchOperation: [
@@ -945,18 +942,17 @@ export class IdnClient {
         try {
             const newCampaign = await certsApi.patchCampaignTemplate(patchCampaignRequest)
         } catch (error) {
-            errorMessage = `Error updating existing Campaign using Certification-Campaigns API: ${(error as Error).message}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            errorMessage = `Error updating existing Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(patchCampaignRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Certification-Campaigns API request")
         }
         return errorMessage
     }
 
-    async setCampaignSchedule(campaignId: string, campaignSchedule: Schedule): Promise<string> {
+    async setCampaignSchedule(apiConfig: Configuration, campaignId: string, campaignSchedule: Schedule): Promise<string> {
         let errorMessage = ""
         // Update the Campaign Schedule via API
-        const certsApi = new CertificationCampaignsApi(this.apiConfig)
+        const certsApi = new CertificationCampaignsApi(apiConfig)
         const setCampaignScheduleRequest: CertificationCampaignsApiSetCampaignTemplateScheduleRequest = {
             id: campaignId,
             schedule: campaignSchedule
@@ -964,15 +960,14 @@ export class IdnClient {
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
         } catch (error) {
-            errorMessage = `Error setting campaign schedule using Certification-Campaigns API: ${(error as Error).message}`
-            let debugMessage = `Failed Certification-Campaigns API request: ${JSON.stringify(error)}`
+            errorMessage = `Error setting campaign schedule using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(setCampaignScheduleRequest, errorMessage)
-            logger.debug(debugMessage)
+            logger.debug(error, "Failed Certification-Campaigns API request")
         }
         return errorMessage
     }
 
-    async processSodPolicyConfig(policyConfig: PolicyConfig): Promise<PolicyImpl> {
+    async processSodPolicyConfig(policyConfig: PolicyConfig, apiConfig?: Configuration): Promise<PolicyImpl> {
         logger.info(`### Processing policy [${policyConfig.policyName}] ###`)
 
         // Create Policy Implementation object
@@ -985,12 +980,17 @@ export class IdnClient {
         let policyId = ""
         let policyQuery = ""
 
-        if (policyConfig.actions.includes(actionDeleteAll)) {
+        // Create a new API Client for each policy in parallel mode to minimize 429 errors due to using the same access_token
+        if (!apiConfig) {
+            apiConfig = this.parallelProcessing ? this.createApiConfig() : this.apiConfig
+        }
+
+        if (policyConfig.actions.includes(PolicyAction.DELETE_ALL)) {
             // Check if policy already exists
-            const existingPolicy = await this.findExistingPolicy(policyConfig)
+            const existingPolicy = await this.findExistingPolicy(apiConfig, policyConfig)
             if (existingPolicy && existingPolicy.id) {
                 // Delete existing policy
-                errorMessage = await this.deletePolicy(existingPolicy.id)
+                errorMessage = await this.deletePolicy(apiConfig, existingPolicy.id)
                 // Update Policy Impl Object with any error messages
                 if (errorMessage) {
                     errorMessages.push(errorMessage)
@@ -1004,8 +1004,8 @@ export class IdnClient {
 
         } else {
             // Find LeftHand & RightHand Entitlements using the Search API
-            const query1Entitlemnts = await this.searchEntitlementsByQuery(policyConfig.query1)
-            const query2Entitlemnts = await this.searchEntitlementsByQuery(policyConfig.query2)
+            const query1Entitlemnts = await this.searchEntitlementsByQuery(apiConfig, policyConfig.query1)
+            const query2Entitlemnts = await this.searchEntitlementsByQuery(apiConfig, policyConfig.query2)
 
             policyImpl.attributes.leftHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query1Entitlemnts))
             policyImpl.attributes.rightHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query2Entitlemnts))
@@ -1033,7 +1033,7 @@ export class IdnClient {
             }
 
             // Prepare Policy Owner refereneces
-            const policyOwner = await this.resolvePolicyOwner(policyConfig)
+            const policyOwner = await this.resolvePolicyOwner(apiConfig, policyConfig)
             // Error if Policy Owner cannot be resolved/found
             if (!policyOwner) {
                 canProcess = false
@@ -1041,7 +1041,7 @@ export class IdnClient {
             }
 
             // Prepare Violation Owner refereneces
-            const violationOwner = await this.resolveViolationOwner(policyConfig)
+            const violationOwner = await this.resolveViolationOwner(apiConfig, policyConfig)
             // Error if Violation Owner cannot be resolved/found
             if (!violationOwner && policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
                 canProcess = false
@@ -1055,13 +1055,13 @@ export class IdnClient {
             if (canProcess) {
                 // Check if policy already exists
                 const violationOwnerAssignmentConfig = this.buildviolationOwnerAssignmentConfig(violationOwner)
-                const existingPolicy = await this.findExistingPolicy(policyConfig)
+                const existingPolicy = await this.findExistingPolicy(apiConfig, policyConfig)
                 if (existingPolicy && existingPolicy.id) {
-                    [errorMessage, policyQuery] = await this.updatePolicy(existingPolicy.id, policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
+                    [errorMessage, policyQuery] = await this.updatePolicy(apiConfig, existingPolicy.id, policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
                     policyId = existingPolicy.id
                 } else {
                     // Create a new Policy
-                    [errorMessage, policyId, policyQuery] = await this.createPolicy(policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
+                    [errorMessage, policyId, policyQuery] = await this.createPolicy(apiConfig, policyConfig, policyOwner, violationOwnerAssignmentConfig, conflictingAccessCriteria)
                 }
                 // Stop processing if any errors come up
                 if (errorMessage) {
@@ -1090,11 +1090,11 @@ export class IdnClient {
             }
 
             // Configure the Policy Schedule if required
-            if (policyConfig.actions.includes(actionSchedulePolicy)) {
+            if (policyConfig.actions.includes(PolicyAction.REPORT)) {
                 const policySchedule = this.buildPolicySchedule(policyConfig.policySchedule)
                 if (policySchedule) {
-                    const policyRecipients = await this.resolvePolicyRecipients(policyConfig, violationOwner, policyOwner)
-                    errorMessage = await this.setPolicySchedule(policyId, policyConfig, policySchedule, policyRecipients)
+                    const policyRecipients = await this.resolvePolicyRecipients(apiConfig, policyConfig, violationOwner, policyOwner)
+                    errorMessage = await this.setPolicySchedule(apiConfig, policyId, policyConfig, policySchedule, policyRecipients)
                     // Update Policy Impl Object with any error messages
                     if (errorMessage) {
                         errorMessages.push(errorMessage)
@@ -1109,12 +1109,12 @@ export class IdnClient {
 
             // Calculate additional Policy Metrics
             // Find LeftHand & RightHand AccessProfiles using the Search API
-            const query1AccessProfiles = await this.searchAccessProfilesbyEntitlements(query1Entitlemnts)
-            const query2AccessProfiles = await this.searchAccessProfilesbyEntitlements(query2Entitlemnts)
+            const query1AccessProfiles = await this.searchAccessProfilesbyEntitlements(apiConfig, query1Entitlemnts)
+            const query2AccessProfiles = await this.searchAccessProfilesbyEntitlements(apiConfig, query2Entitlemnts)
 
             // Find LeftHand & RightHand Roles using the Search API
-            const query1Roles = await this.searchRolesByAccessProfilesOrEntitlements(query1Entitlemnts, query1AccessProfiles)
-            const query2Roles = await this.searchRolesByAccessProfilesOrEntitlements(query2Entitlemnts, query2AccessProfiles)
+            const query1Roles = await this.searchRolesByAccessProfilesOrEntitlements(apiConfig, query1Entitlemnts, query1AccessProfiles)
+            const query2Roles = await this.searchRolesByAccessProfilesOrEntitlements(apiConfig, query2Entitlemnts, query2AccessProfiles)
 
             // Build AccessProfile and Role Name lists
             const leftHandAccessProfiles = this.buildNameArray(query1AccessProfiles)
@@ -1135,7 +1135,7 @@ export class IdnClient {
             policyImpl.attributes.totalCount = totalCount
 
             // Configure the Policy Campaign if required
-            if (policyConfig.actions.includes(actionCertifyViolations) && !policyConfig.actions.includes(actionDeleteCampaign)) {
+            if (policyConfig.actions.includes(PolicyAction.CERTIFY) && !policyConfig.actions.includes(PolicyAction.DELETE_CAMPAIGN)) {
                 // Reset canProcess flag
                 canProcess = true
                 let campaignId = ""
@@ -1159,15 +1159,15 @@ export class IdnClient {
                 // Create or Update an existing campaign only if the canProcess flag is true
                 if (canProcess) {
                     // Check if Campaign already exists
-                    const existingCampaign = await this.findExistingCampaign(policyConfig)
+                    const existingCampaign = await this.findExistingCampaign(apiConfig, policyConfig)
 
                     if (existingCampaign && existingCampaign.id) {
                         // Update existing campaign
-                        errorMessage = await this.updatePolicyCampaign(existingCampaign.id, policyConfig, policyQuery, accessConstraints, violationOwner)
+                        errorMessage = await this.updatePolicyCampaign(apiConfig, existingCampaign.id, policyConfig, policyQuery, accessConstraints, violationOwner)
                         campaignId = existingCampaign.id
                     } else {
                         // Create a new campaign
-                        [errorMessage, campaignId] = await this.createPolicyCampaign(policyConfig, policyQuery, accessConstraints, violationOwner, null)
+                        [errorMessage, campaignId] = await this.createPolicyCampaign(apiConfig, policyConfig, policyQuery, accessConstraints, violationOwner, null)
                     }
                     // Stop processing if any errors come up
                     if (errorMessage) {
@@ -1193,7 +1193,7 @@ export class IdnClient {
                 if (policyConfig.certificationSchedule) {
                     const campaignSchedule = this.buildCampaignSchedule(policyConfig.certificationSchedule)
                     if (campaignSchedule) {
-                        errorMessage = await this.setCampaignSchedule(campaignId, campaignSchedule)
+                        errorMessage = await this.setCampaignSchedule(apiConfig, campaignId, campaignSchedule)
                         // Update Policy Impl Object with any error messages
                         if (errorMessage) {
                             errorMessages.push(errorMessage)
@@ -1209,7 +1209,7 @@ export class IdnClient {
         }
 
         // Delete the Policy Campaign if required
-        if (policyConfig.actions.includes(actionDeleteCampaign) || policyConfig.actions.includes(actionDeleteAll)) {
+        if (policyConfig.actions.includes(PolicyAction.DELETE_CAMPAIGN) || policyConfig.actions.includes(PolicyAction.DELETE_ALL)) {
             // Reset canProcess flag
             canProcess = true
             errorMessage = ""
@@ -1223,11 +1223,11 @@ export class IdnClient {
             // Delete existing campaign only if the canProcess flag is true
             if (canProcess) {
                 // Check if Campaign already exists
-                const existingCampaign = await this.findExistingCampaign(policyConfig)
+                const existingCampaign = await this.findExistingCampaign(apiConfig, policyConfig)
 
                 if (existingCampaign && existingCampaign.id) {
                     // Delete existing campaign
-                    errorMessage = await this.deletePolicyCampaign(existingCampaign.id)
+                    errorMessage = await this.deletePolicyCampaign(apiConfig, existingCampaign.id)
                     // Update Policy Impl Object with any error messages
                     if (errorMessage) {
                         errorMessages.push(errorMessage)
@@ -1249,27 +1249,13 @@ export class IdnClient {
         return policyImpl
     }
 
-    async getAllAccounts(): Promise<any[]> {
-        let policyImpls: any[] = []
-        // Reading Policy Configurations from the Policy Configuration Source
-        const policyConfigs = await this.getAllPolicyConfigs()
-        for (const policyConfigObject of policyConfigs) {
-            let policyConfig = new PolicyConfig(policyConfigObject)
-            // Only Process SOD policies for now
-            if (policyConfig.policyType == sodPolicyType) {
-                policyImpls.push(this.processSodPolicyConfig(policyConfig))
-            }
-        }
-        return policyImpls
-    }
-
     async getAccount(identity: string): Promise<PolicyImpl | undefined> {
         const policyConfigObject = await this.getPolicyConfigByName(identity)
         if (policyConfigObject) {
-            let policyConfig = new PolicyConfig(policyConfigObject)
+            const policyConfig = new PolicyConfig(policyConfigObject)
             // Only Process SOD policies for now
-            if (policyConfig.policyType == sodPolicyType) {
-                return this.processSodPolicyConfig(policyConfig)
+            if (policyConfig.policyType === PolicyType.SOD) {
+                return this.processSodPolicyConfig(policyConfig, this.apiConfig)
             }
         }
     }
