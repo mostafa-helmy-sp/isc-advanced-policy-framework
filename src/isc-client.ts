@@ -32,26 +32,26 @@ import {
     AccessConstraintTypeEnum,
     AccessConstraintOperatorEnum,
     AccessCriteriaCriteriaListInnerTypeEnum,
-    SODPolicyApi,
     SodPolicyTypeEnum,
-    SODPolicyApiListSodPoliciesRequest,
-    SODPolicyApiCreateSodPolicyRequest,
-    SODPolicyApiPatchSodPolicyRequest,
-    SODPolicyApiPutPolicyScheduleRequest,
-    SODPolicyApiDeleteSodPolicyRequest,
     Schedule,
     ScheduleType,
     ScheduleTypeEnum,
     ScheduleHoursTypeEnum,
     ScheduleDaysTypeEnum,
+    SODPoliciesApi,
+    SODPoliciesApiListSodPoliciesRequest,
+    SODPoliciesApiDeleteSodPolicyRequest,
+    SODPoliciesApiCreateSodPolicyRequest,
+    SODPoliciesApiPatchSodPolicyRequest,
+    SODPoliciesApiPutPolicyScheduleRequest,
     CampaignTemplate,
     CampaignTypeEnum,
     CampaignCorrelatedStatusEnum,
     CampaignAllOfSearchCampaignInfoTypeEnum,
     CampaignAllOfSearchCampaignInfoReviewer,
     CertificationCampaignsApi,
+    CertificationCampaignsApiGetCampaignTemplatesRequest,
     CertificationCampaignsApiUpdateCampaignRequest,
-    CertificationCampaignsApiListCampaignTemplatesRequest,
     CertificationCampaignsApiDeleteCampaignTemplateRequest,
     CertificationCampaignsApiCreateCampaignTemplateRequest,
     CertificationCampaignsApiSetCampaignTemplateScheduleRequest
@@ -213,8 +213,8 @@ export class IscClient {
 
     async findExistingPolicy(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<SodPolicy | undefined> {
         const filter = `name eq "${policyConfig.policyName}"`
-        const policyApi = new SODPolicyApi(apiConfig)
-        const findPolicyRequest: SODPolicyApiListSodPoliciesRequest = {
+        const policyApi = new SODPoliciesApi(apiConfig)
+        const findPolicyRequest: SODPoliciesApiListSodPoliciesRequest = {
             filters: filter
         }
         try {
@@ -236,11 +236,11 @@ export class IscClient {
     async findExistingCampaign(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<CampaignTemplate | undefined> {
         const filter = `name eq "${policyConfig.certificationName}"`
         const certsApi = new CertificationCampaignsApi(apiConfig)
-        const findCampaignRequest: CertificationCampaignsApiListCampaignTemplatesRequest = {
+        const findCampaignRequest: CertificationCampaignsApiGetCampaignTemplatesRequest = {
             filters: filter
         }
         try {
-            const existingCampaign = await certsApi.listCampaignTemplates(findCampaignRequest)
+            const existingCampaign = await certsApi.getCampaignTemplates(findCampaignRequest)
             // Check if no campaign already exists
             if (existingCampaign.data.length == 0 || !existingCampaign.data[0].id) {
                 return
@@ -401,7 +401,7 @@ export class IscClient {
         const searchApi = new SearchApi(apiConfig)
         let query = ""
         if (attribute === "name" || attribute === "employeeNumber" || attribute === "id") {
-            query = `${attribute}:"${value}"`
+            query = `${attribute}.exact:"${value}"`
         } else {
             query = `attributes.${attribute}.exact:"${value}"`
         }
@@ -668,8 +668,8 @@ export class IscClient {
     async deletePolicy(apiConfig: Configuration, policyId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Policy via API
-        const policyApi = new SODPolicyApi(apiConfig)
-        const deletePolicyRequest: SODPolicyApiDeleteSodPolicyRequest = {
+        const policyApi = new SODPoliciesApi(apiConfig)
+        const deletePolicyRequest: SODPoliciesApiDeleteSodPolicyRequest = {
             id: policyId
         }
         try {
@@ -688,8 +688,8 @@ export class IscClient {
         let policyQuery = ""
         let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
         // Submit the new Policy via API
-        const policyApi = new SODPolicyApi(apiConfig)
-        const newPolicyRequest: SODPolicyApiCreateSodPolicyRequest = {
+        const policyApi = new SODPoliciesApi(apiConfig)
+        const newPolicyRequest: SODPoliciesApiCreateSodPolicyRequest = {
             sodPolicy: {
                 name: policyConfig.policyName,
                 description: policyConfig.policyDescription,
@@ -725,8 +725,8 @@ export class IscClient {
         let policyQuery = ""
         let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
         // Submit the patch Policy via API
-        const policyApi = new SODPolicyApi(apiConfig)
-        const patchPolicyRequest: SODPolicyApiPatchSodPolicyRequest = {
+        const policyApi = new SODPoliciesApi(apiConfig)
+        const patchPolicyRequest: SODPoliciesApiPatchSodPolicyRequest = {
             id: existingPolicyId,
             jsonPatchOperation: [
                 {
@@ -797,8 +797,8 @@ export class IscClient {
     async setPolicySchedule(apiConfig: Configuration, policyId: string, policyConfig: PolicyConfig, policySchedule: any, policyRecipients: any): Promise<string> {
         let errorMessage = ""
         // Update the Policy Schedule via API
-        const policyApi = new SODPolicyApi(apiConfig)
-        const setPolicyScheduleRequest: SODPolicyApiPutPolicyScheduleRequest = {
+        const policyApi = new SODPoliciesApi(apiConfig)
+        const setPolicyScheduleRequest: SODPoliciesApiPutPolicyScheduleRequest = {
             id: policyId,
             sodPolicySchedule: {
                 name: `${policyConfig.policySchedule}: ${policyConfig.policyName}`,
