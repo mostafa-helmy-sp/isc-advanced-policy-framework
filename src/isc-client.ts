@@ -5,56 +5,56 @@ import {
 import {
     Configuration,
     ConfigurationParameters,
-    SourcesApi,
-    SourcesApiListSourcesRequest,
-    Account,
-    AccountsApi,
-    AccountsApiListAccountsRequest,
+    SourcesV2025Api,
+    SourcesV2025ApiListSourcesRequest,
+    AccountV2025,
+    AccountsV2025Api,
+    AccountsV2025ApiListAccountsRequest,
     SearchApi,
-    Search,
-    Index,
+    SearchV2025,
+    IndexV2025,
     Paginator,
-    EntitlementDocument,
-    AccessProfileDocument,
-    RoleDocument,
-    GovernanceGroupsBetaApi,
-    GovernanceGroupsBetaApiListWorkgroupsRequest,
-    GovernanceGroupsBetaApiListWorkgroupMembersRequest,
-    DtoType,
-    JsonPatchOperationOpEnum,
-    SodPolicy,
-    SodPolicyStateEnum,
-    ViolationOwnerAssignmentConfig,
-    ViolationOwnerAssignmentConfigAssignmentRuleEnum,
-    SodPolicyConflictingAccessCriteria,
-    AccessCriteriaCriteriaListInner,
-    AccessConstraint,
-    AccessConstraintTypeEnum,
-    AccessConstraintOperatorEnum,
-    AccessCriteriaCriteriaListInnerTypeEnum,
-    SodPolicyTypeEnum,
-    Schedule,
-    ScheduleType,
-    ScheduleTypeEnum,
-    ScheduleHoursTypeEnum,
-    ScheduleDaysTypeEnum,
-    SODPoliciesApi,
-    SODPoliciesApiListSodPoliciesRequest,
-    SODPoliciesApiDeleteSodPolicyRequest,
-    SODPoliciesApiCreateSodPolicyRequest,
-    SODPoliciesApiPatchSodPolicyRequest,
-    SODPoliciesApiPutPolicyScheduleRequest,
-    CampaignTemplate,
-    CampaignTypeEnum,
-    CampaignCorrelatedStatusEnum,
-    CampaignAllOfSearchCampaignInfoTypeEnum,
-    CampaignAllOfSearchCampaignInfoReviewer,
-    CertificationCampaignsApi,
-    CertificationCampaignsApiGetCampaignTemplatesRequest,
-    CertificationCampaignsApiUpdateCampaignRequest,
-    CertificationCampaignsApiDeleteCampaignTemplateRequest,
-    CertificationCampaignsApiCreateCampaignTemplateRequest,
-    CertificationCampaignsApiSetCampaignTemplateScheduleRequest
+    EntitlementDocumentV2025,
+    AccessProfileDocumentV2025,
+    RoleDocumentV2025,
+    IdentityDocumentV2025,
+    GovernanceGroupsV2025Api,
+    GovernanceGroupsV2025ApiListWorkgroupsRequest,
+    GovernanceGroupsV2025ApiListWorkgroupMembersRequest,
+    DtoTypeV2025,
+    SodPolicyV2025,
+    SodPolicyV2025StateV2025,
+    SodPolicyV2025TypeV2025,
+    SodPolicyConflictingAccessCriteriaV2025,
+    ViolationOwnerAssignmentConfigV2025,
+    ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025,
+    AccessCriteriaCriteriaListInnerV2025,
+    AccessCriteriaCriteriaListInnerV2025TypeV2025,
+    AccessConstraintV2025,
+    AccessConstraintV2025TypeV2025,
+    AccessConstraintV2025OperatorV2025,
+    ScheduleV2025,
+    ScheduleTypeV2025,
+    ScheduleHoursV2025TypeV2025,
+    ScheduleDaysV2025TypeV2025,
+    SODPoliciesV2025Api,
+    SODPoliciesV2025ApiListSodPoliciesRequest,
+    SODPoliciesV2025ApiDeleteSodPolicyRequest,
+    SODPoliciesV2025ApiCreateSodPolicyRequest,
+    SODPoliciesV2025ApiPatchSodPolicyRequest,
+    SODPoliciesV2025ApiPutPolicyScheduleRequest,
+    CampaignTemplateV2025,
+    CampaignV2025TypeV2025,
+    CampaignV2025CorrelatedStatusV2025,
+    CampaignAllOfSearchCampaignInfoV2025TypeV2025,
+    CampaignAllOfSearchCampaignInfoReviewerV2025,
+    CertificationCampaignsV2025Api,
+    CertificationCampaignsV2025ApiGetCampaignTemplatesRequest,
+    CertificationCampaignsV2025ApiUpdateCampaignRequest,
+    CertificationCampaignsV2025ApiDeleteCampaignTemplateRequest,
+    CertificationCampaignsV2025ApiCreateCampaignTemplateRequest,
+    CertificationCampaignsV2025ApiSetCampaignTemplateScheduleRequest,
+    JsonPatchOperationV2025OpV2025
 } from "sailpoint-api-client"
 import { PolicyConfig } from "./model/policy-config"
 import { PolicyImpl } from "./model/policy-impl"
@@ -107,9 +107,10 @@ export class IscClient {
             baseurl: this.config.apiUrl,
             clientId: this.config.clientId,
             clientSecret: this.config.clientSecret,
-            tokenUrl: this.config.apiUrl + tokenUrlPath
+            tokenUrl: this.config.apiUrl + tokenUrlPath,
         }
         const apiConfig = new Configuration(ConfigurationParameters)
+        apiConfig.experimental = true
         apiConfig.retriesConfig = {
             retries: 10,
             retryDelay: (retryCount, error) => axiosRetry.exponentialDelay(retryCount, error, 2000),
@@ -148,8 +149,8 @@ export class IscClient {
         if (!this.policyConfigSourceId) {
             // Get and set Source ID if not already set
             logger.debug("Policy Config Source ID not set, getting the ID using the Sources API")
-            const sourceApi = new SourcesApi(this.apiConfig)
-            const sourcesRequest: SourcesApiListSourcesRequest = {
+            const sourceApi = new SourcesV2025Api(this.apiConfig)
+            const sourcesRequest: SourcesV2025ApiListSourcesRequest = {
                 filters: filter
             }
             try {
@@ -169,13 +170,13 @@ export class IscClient {
         return this.policyConfigSourceId
     }
 
-    async getAllPolicyConfigs(): Promise<Account[]> {
+    async getAllPolicyConfigs(): Promise<AccountV2025[]> {
         // Get Policy Config Source ID
         await this.getPolicyConfigSourceId()
         const filter = `sourceId eq "${this.policyConfigSourceId}"`
         // Use Accounts API to get the Policy configurations stored as accounts in the Policy Config Source
-        const accountsApi = new AccountsApi(this.apiConfig)
-        const accountsRequest: AccountsApiListAccountsRequest = {
+        const accountsApi = new AccountsV2025Api(this.apiConfig)
+        const accountsRequest: AccountsV2025ApiListAccountsRequest = {
             filters: filter
         }
         try {
@@ -190,13 +191,13 @@ export class IscClient {
         }
     }
 
-    async getPolicyConfigByName(policyName: string): Promise<Account> {
+    async getPolicyConfigByName(policyName: string): Promise<AccountV2025> {
         // Get Policy Config Source ID
         await this.getPolicyConfigSourceId()
         const filter = `sourceId eq "${this.policyConfigSourceId}" and name eq "${policyName}"`
         // Use Accounts API to get the Policy configuration stored as an account in the Policy Config Source by name
-        const accountsApi = new AccountsApi(this.apiConfig)
-        const accountsRequest: AccountsApiListAccountsRequest = {
+        const accountsApi = new AccountsV2025Api(this.apiConfig)
+        const accountsRequest: AccountsV2025ApiListAccountsRequest = {
             filters: filter
         }
         try {
@@ -211,10 +212,10 @@ export class IscClient {
         }
     }
 
-    async findExistingPolicy(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<SodPolicy | undefined> {
+    async findExistingPolicy(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<SodPolicyV2025 | undefined> {
         const filter = `name eq "${policyConfig.policyName}"`
-        const policyApi = new SODPoliciesApi(apiConfig)
-        const findPolicyRequest: SODPoliciesApiListSodPoliciesRequest = {
+        const policyApi = new SODPoliciesV2025Api(apiConfig)
+        const findPolicyRequest: SODPoliciesV2025ApiListSodPoliciesRequest = {
             filters: filter
         }
         try {
@@ -233,10 +234,10 @@ export class IscClient {
         }
     }
 
-    async findExistingCampaign(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<CampaignTemplate | undefined> {
+    async findExistingCampaign(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<CampaignTemplateV2025 | undefined> {
         const filter = `name eq "${policyConfig.certificationName}"`
-        const certsApi = new CertificationCampaignsApi(apiConfig)
-        const findCampaignRequest: CertificationCampaignsApiGetCampaignTemplatesRequest = {
+        const certsApi = new CertificationCampaignsV2025Api(apiConfig)
+        const findCampaignRequest: CertificationCampaignsV2025ApiGetCampaignTemplatesRequest = {
             filters: filter
         }
         try {
@@ -289,11 +290,11 @@ export class IscClient {
         return [... new Set([...items1, ...items2])]
     }
 
-    async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<EntitlementDocument[]> {
+    async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<EntitlementDocumentV2025[]> {
         const searchApi = new SearchApi(apiConfig)
-        const search: Search = {
+        const search: SearchV2025 = {
             indices: [
-                Index.Entitlements
+                IndexV2025.Entitlements
             ],
             query: {
                 query: query
@@ -310,7 +311,7 @@ export class IscClient {
             sort: ["id"]
         }
         try {
-            const entitlements = (await Paginator.paginateSearchApi(searchApi, search)).data as EntitlementDocument[]
+            const entitlements = (await Paginator.paginateSearchApi(searchApi, search)).data as EntitlementDocumentV2025[]
             return entitlements
         } catch (error) {
             let errorMessage = `Error finding entitlements using Search API: ${error instanceof Error ? error.message : error}`
@@ -320,15 +321,15 @@ export class IscClient {
         }
     }
 
-    async searchAccessProfilesbyEntitlements(apiConfig: Configuration, entitlements: any[]): Promise<AccessProfileDocument[]> {
+    async searchAccessProfilesbyEntitlements(apiConfig: Configuration, entitlements: any[]): Promise<AccessProfileDocumentV2025[]> {
         if (!entitlements || entitlements.length == 0) {
             return []
         }
         const query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
         const searchApi = new SearchApi(apiConfig)
-        const search: Search = {
+        const search: SearchV2025 = {
             indices: [
-                Index.Accessprofiles
+                IndexV2025.Accessprofiles
             ],
             query: {
                 query: query
@@ -344,7 +345,7 @@ export class IscClient {
             sort: ["id"]
         }
         try {
-            const accessProfiles: AccessProfileDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
+            const accessProfiles: AccessProfileDocumentV2025[] = (await Paginator.paginateSearchApi(searchApi, search)).data as AccessProfileDocumentV2025[]
             return accessProfiles
         } catch (error) {
             let errorMessage = `Error finding access profiles using Search API: ${error instanceof Error ? error.message : error}`
@@ -354,7 +355,7 @@ export class IscClient {
         }
     }
 
-    async searchRolesByAccessProfilesOrEntitlements(apiConfig: Configuration, entitlements: any[], accessProfiles: any[]): Promise<RoleDocument[]> {
+    async searchRolesByAccessProfilesOrEntitlements(apiConfig: Configuration, entitlements: any[], accessProfiles: any[]): Promise<RoleDocumentV2025[]> {
         let query
         if (entitlements && entitlements.length > 0) {
             query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
@@ -370,9 +371,9 @@ export class IscClient {
             return []
         }
         const searchApi = new SearchApi(apiConfig)
-        const search: Search = {
+        const search: SearchV2025 = {
             indices: [
-                Index.Roles
+                IndexV2025.Roles
             ],
             query: {
                 query: query
@@ -387,7 +388,7 @@ export class IscClient {
             sort: ["id"]
         }
         try {
-            const roles: RoleDocument[] = (await Paginator.paginateSearchApi(searchApi, search)).data
+            const roles: RoleDocumentV2025[] = (await Paginator.paginateSearchApi(searchApi, search)).data as RoleDocumentV2025[]
             return roles
         } catch (error) {
             let errorMessage = `Error finding roles using Search API: ${error instanceof Error ? error.message : error}`
@@ -405,9 +406,9 @@ export class IscClient {
         } else {
             query = `attributes.${attribute}.exact:"${value}"`
         }
-        const search: Search = {
+        const search: SearchV2025 = {
             indices: [
-                Index.Identities
+                IndexV2025.Identities
             ],
             query: {
                 query: query
@@ -422,14 +423,14 @@ export class IscClient {
             sort: ["id"]
         }
         try {
-            const identities = await Paginator.paginateSearchApi(searchApi, search)
+            const identities: IdentityDocumentV2025[] = await (await Paginator.paginateSearchApi(searchApi, search)).data as IdentityDocumentV2025[]
             // Check if no identity exists
-            if (identities.data.length == 0) {
+            if (identities.length == 0) {
                 return
             } else {
                 // Use the first identity if more than one match
-                const identity = identities.data[0]
-                return { id: identity.id, name: identity.name, type: identity._type.toUpperCase() }
+                const identity = identities[0]
+                return { id: identity.id, name: identity.name, type: DtoTypeV2025.Identity }
             }
         } catch (error) {
             let errorMessage = `Error finding identity using Search API: ${error instanceof Error ? error.message : error}`
@@ -441,8 +442,8 @@ export class IscClient {
 
     async searchGovGroupByName(apiConfig: Configuration, govGroupName: string): Promise<any> {
         const filter = `name eq "${govGroupName}"`
-        const govGroupApi = new GovernanceGroupsBetaApi(apiConfig)
-        const findGovGroupRequest: GovernanceGroupsBetaApiListWorkgroupsRequest = {
+        const govGroupApi = new GovernanceGroupsV2025Api(apiConfig)
+        const findGovGroupRequest: GovernanceGroupsV2025ApiListWorkgroupsRequest = {
             filters: filter
         }
         try {
@@ -453,7 +454,7 @@ export class IscClient {
             } else {
                 // Use the first governance group if more than one match
                 const govGroup = existingGovGroup.data[0]
-                return { id: govGroup.id, name: govGroup.name, type: DtoType.GovernanceGroup }
+                return { id: govGroup.id, name: govGroup.name, type: DtoTypeV2025.GovernanceGroup }
             }
         } catch (error) {
             let errorMessage = `Error finding Governance Group using Governance-Groups API: ${error instanceof Error ? error.message : error}`
@@ -464,8 +465,8 @@ export class IscClient {
     }
 
     async findGovGroupMembers(apiConfig: Configuration, govGroupId: string): Promise<any[]> {
-        const govGroupApi = new GovernanceGroupsBetaApi(apiConfig)
-        const findGovGroupMembersRequest: GovernanceGroupsBetaApiListWorkgroupMembersRequest = {
+        const govGroupApi = new GovernanceGroupsV2025Api(apiConfig)
+        const findGovGroupMembersRequest: GovernanceGroupsV2025ApiListWorkgroupMembersRequest = {
             workgroupId: govGroupId
         }
         try {
@@ -476,7 +477,7 @@ export class IscClient {
             } else {
                 // Return the governance group members
                 let members: any[] = []
-                govGroupMembers.data.forEach(govGroupMember => members.push({ id: govGroupMember.id, type: DtoType.Identity, name: govGroupMember.name }))
+                govGroupMembers.data.forEach(govGroupMember => members.push({ id: govGroupMember.id, type: DtoTypeV2025.Identity, name: govGroupMember.name }))
                 return members
             }
         } catch (error) {
@@ -487,18 +488,18 @@ export class IscClient {
         }
     }
 
-    buildConflictingAccessCriteriaList(items: EntitlementDocument[]): AccessCriteriaCriteriaListInner[] {
-        let criteriaList: AccessCriteriaCriteriaListInner[] = []
-        items.forEach(item => criteriaList.push({ id: item.id, type: AccessCriteriaCriteriaListInnerTypeEnum.Entitlement }))
+    buildConflictingAccessCriteriaList(items: EntitlementDocumentV2025[]): AccessCriteriaCriteriaListInnerV2025[] {
+        let criteriaList: AccessCriteriaCriteriaListInnerV2025[] = []
+        items.forEach(item => criteriaList.push({ id: item.id, type: AccessCriteriaCriteriaListInnerV2025TypeV2025.Entitlement }))
         return criteriaList
     }
 
-    buildPolicyConflictingAccessCriteria(policyConfig: PolicyConfig, query1Entitlemnts: EntitlementDocument[], query2Entitlemnts: EntitlementDocument[]): SodPolicyConflictingAccessCriteria {
+    buildPolicyConflictingAccessCriteria(policyConfig: PolicyConfig, query1Entitlemnts: EntitlementDocumentV2025[], query2Entitlemnts: EntitlementDocumentV2025[]): SodPolicyConflictingAccessCriteriaV2025 {
         // Build ID,Type,Name arrays
         const leftCriteria = this.buildConflictingAccessCriteriaList(query1Entitlemnts)
         const rightCriteria = this.buildConflictingAccessCriteriaList(query2Entitlemnts)
         // Build the conflicting access criteria
-        const criteria: SodPolicyConflictingAccessCriteria = {
+        const criteria: SodPolicyConflictingAccessCriteriaV2025 = {
             leftCriteria: {
                 name: policyConfig.query1Name,
                 criteriaList: leftCriteria
@@ -511,8 +512,8 @@ export class IscClient {
         return criteria
     }
 
-    buildCampaignAccsesConstraints(entitlements1: EntitlementDocument[], entitlements2: EntitlementDocument[], accessProfiles1: AccessProfileDocument[], accessProfiles2: AccessProfileDocument[], roles1: RoleDocument[], roles2: RoleDocument[]): [accessConstraints: AccessConstraint[], leftHandTotalCount: number, rightHandTotalCount: number, totalCount: number] {
-        let accessConstraints: AccessConstraint[] = []
+    buildCampaignAccsesConstraints(entitlements1: EntitlementDocumentV2025[], entitlements2: EntitlementDocumentV2025[], accessProfiles1: AccessProfileDocumentV2025[], accessProfiles2: AccessProfileDocumentV2025[], roles1: RoleDocumentV2025[], roles2: RoleDocumentV2025[]): [accessConstraints: AccessConstraintV2025[], leftHandTotalCount: number, rightHandTotalCount: number, totalCount: number] {
+        let accessConstraints: AccessConstraintV2025[] = []
         // Build ID only arrays
         const entitlement1Ids = this.buildIdArray(entitlements1)
         const entitlement2Ids = this.buildIdArray(entitlements2)
@@ -526,13 +527,13 @@ export class IscClient {
         const roleIds: string[] = this.mergeUnique(role1Ids, role2Ids)
         // Add relevant sections to the access constraints
         if (entitlementIds.length > 0) {
-            accessConstraints.push({ type: AccessConstraintTypeEnum.Entitlement, ids: entitlementIds, operator: AccessConstraintOperatorEnum.Selected })
+            accessConstraints.push({ type: AccessConstraintV2025TypeV2025.Entitlement, ids: entitlementIds, operator: AccessConstraintV2025OperatorV2025.Selected })
         }
         if (accessProfileIds.length > 0) {
-            accessConstraints.push({ type: AccessConstraintTypeEnum.AccessProfile, ids: accessProfileIds, operator: AccessConstraintOperatorEnum.Selected })
+            accessConstraints.push({ type: AccessConstraintV2025TypeV2025.AccessProfile, ids: accessProfileIds, operator: AccessConstraintV2025OperatorV2025.Selected })
         }
         if (roleIds.length > 0) {
-            accessConstraints.push({ type: AccessConstraintTypeEnum.Role, ids: roleIds, operator: AccessConstraintOperatorEnum.Selected })
+            accessConstraints.push({ type: AccessConstraintV2025TypeV2025.Role, ids: roleIds, operator: AccessConstraintV2025OperatorV2025.Selected })
         }
         // Calculate metrics to be used on the aggregated policy
         const leftHandTotalCount = entitlement1Ids.length + accessProfile1Ids.length + role1Ids.length
@@ -553,37 +554,37 @@ export class IscClient {
         return names
     }
 
-    buildPolicySchedule(scheduleConfig: string): Schedule | any {
+    buildPolicySchedule(scheduleConfig: string): ScheduleV2025 | any {
         let schedule
-        if (scheduleConfig == ScheduleType.Daily) {
+        if (scheduleConfig == ScheduleTypeV2025.Daily) {
             schedule = {
-                type: ScheduleType.Daily,
+                type: ScheduleTypeV2025.Daily,
                 hours: {
-                    type: ScheduleHoursTypeEnum.List,
+                    type: ScheduleHoursV2025TypeV2025.List,
                     values: this.hourlyScheduleDay
                 }
             }
-        } else if (scheduleConfig == ScheduleType.Weekly) {
+        } else if (scheduleConfig == ScheduleTypeV2025.Weekly) {
             schedule = {
-                type: ScheduleType.Weekly,
+                type: ScheduleTypeV2025.Weekly,
                 hours: {
-                    type: ScheduleHoursTypeEnum.List,
+                    type: ScheduleHoursV2025TypeV2025.List,
                     values: this.hourlyScheduleDay
                 },
                 days: {
-                    type: ScheduleDaysTypeEnum.List,
+                    type: ScheduleDaysV2025TypeV2025.List,
                     values: this.weeklyScheduleDay
                 }
             }
-        } else if (scheduleConfig == ScheduleType.Monthly) {
+        } else if (scheduleConfig == ScheduleTypeV2025.Monthly) {
             schedule = {
-                type: ScheduleType.Monthly,
+                type: ScheduleTypeV2025.Monthly,
                 hours: {
-                    type: ScheduleHoursTypeEnum.List,
+                    type: ScheduleHoursV2025TypeV2025.List,
                     values: this.hourlyScheduleDay
                 },
                 days: {
-                    type: ScheduleDaysTypeEnum.List,
+                    type: ScheduleDaysV2025TypeV2025.List,
                     values: this.monthlyScheduleDay
                 }
             }
@@ -592,29 +593,29 @@ export class IscClient {
             return schedule
     }
 
-    buildCampaignSchedule(scheduleConfig: string): Schedule | undefined {
+    buildCampaignSchedule(scheduleConfig: string): ScheduleV2025 | undefined {
         let schedule
-        if (scheduleConfig == ScheduleTypeEnum.Weekly) {
+        if (scheduleConfig == ScheduleTypeV2025.Weekly) {
             schedule = {
-                type: ScheduleTypeEnum.Weekly,
+                type: ScheduleTypeV2025.Weekly,
                 hours: {
-                    type: ScheduleHoursTypeEnum.List,
+                    type: ScheduleHoursV2025TypeV2025.List,
                     values: this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
                 },
                 days: {
-                    type: ScheduleDaysTypeEnum.List,
+                    type: ScheduleDaysV2025TypeV2025.List,
                     values: this.weeklyScheduleDay.slice(0, maxWeeklyDaysPerCampaignSchedule)
                 }
             }
-        } else if (scheduleConfig == ScheduleTypeEnum.Monthly) {
+        } else if (scheduleConfig == ScheduleTypeV2025.Monthly) {
             schedule = {
-                type: ScheduleTypeEnum.Monthly,
+                type: ScheduleTypeV2025.Monthly,
                 hours: {
-                    type: ScheduleHoursTypeEnum.List,
+                    type: ScheduleHoursV2025TypeV2025.List,
                     values: this.hourlyScheduleDay.slice(0, maxHoursPerCampaignSchedule)
                 },
                 days: {
-                    type: ScheduleDaysTypeEnum.List,
+                    type: ScheduleDaysV2025TypeV2025.List,
                     values: this.monthlyScheduleDay.slice(0, maxMonthlyDaysPerCampaignSchedule)
                 }
             }
@@ -624,37 +625,37 @@ export class IscClient {
     }
 
     async resolvePolicyOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<any> {
-        if (policyConfig.policyOwnerType == DtoType.Identity) {
+        if (policyConfig.policyOwnerType == DtoTypeV2025.Identity) {
             return await this.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, policyConfig.policyOwner)
-        } else if (policyConfig.policyOwnerType == DtoType.GovernanceGroup) {
+        } else if (policyConfig.policyOwnerType == DtoTypeV2025.GovernanceGroup) {
             return await this.searchGovGroupByName(apiConfig, policyConfig.policyOwner)
         }
     }
 
     async resolveViolationOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<any> {
-        if (policyConfig.violationOwnerType == DtoType.Identity && policyConfig.violationOwner) {
+        if (policyConfig.violationOwnerType == DtoTypeV2025.Identity && policyConfig.violationOwner) {
             return await this.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, policyConfig.violationOwner)
-        } else if (policyConfig.violationOwnerType == DtoType.GovernanceGroup && policyConfig.violationOwner) {
+        } else if (policyConfig.violationOwnerType == DtoTypeV2025.GovernanceGroup && policyConfig.violationOwner) {
             return await this.searchGovGroupByName(apiConfig, policyConfig.violationOwner)
         }
     }
 
-    buildviolationOwnerAssignmentConfig(violationOwner: any): ViolationOwnerAssignmentConfig {
-        let violationOwnerConfig: ViolationOwnerAssignmentConfig
+    buildviolationOwnerAssignmentConfig(violationOwner: any): ViolationOwnerAssignmentConfigV2025 {
+        let violationOwnerConfig: ViolationOwnerAssignmentConfigV2025
         if (violationOwner) {
-            violationOwnerConfig = { assignmentRule: ViolationOwnerAssignmentConfigAssignmentRuleEnum.Static, ownerRef: violationOwner }
+            violationOwnerConfig = { assignmentRule: ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Static, ownerRef: violationOwner }
         } else {
-            violationOwnerConfig = { assignmentRule: ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager }
+            violationOwnerConfig = { assignmentRule: ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Manager }
         }
         return violationOwnerConfig
     }
 
     async resolvePolicyRecipients(apiConfig: Configuration, policyConfig: PolicyConfig, violationOwner: any, policyOwner: any): Promise<any[]> {
         let recipients = []
-        if (policyConfig.violationOwnerType == DtoType.Identity && policyConfig.violationOwner) {
+        if (policyConfig.violationOwnerType == DtoTypeV2025.Identity && policyConfig.violationOwner) {
             // Return the violation manager
             recipients = [violationOwner]
-        } else if (policyConfig.violationOwnerType == DtoType.GovernanceGroup && policyConfig.violationOwner) {
+        } else if (policyConfig.violationOwnerType == DtoTypeV2025.GovernanceGroup && policyConfig.violationOwner) {
             // Resolve governance group members
             recipients = await this.findGovGroupMembers(apiConfig, violationOwner.id)
         }
@@ -668,8 +669,8 @@ export class IscClient {
     async deletePolicy(apiConfig: Configuration, policyId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Policy via API
-        const policyApi = new SODPoliciesApi(apiConfig)
-        const deletePolicyRequest: SODPoliciesApiDeleteSodPolicyRequest = {
+        const policyApi = new SODPoliciesV2025Api(apiConfig)
+        const deletePolicyRequest: SODPoliciesV2025ApiDeleteSodPolicyRequest = {
             id: policyId
         }
         try {
@@ -686,11 +687,11 @@ export class IscClient {
         let errorMessage = ""
         let policyId = ""
         let policyQuery = ""
-        let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
+        let policyState = policyConfig.policyState ? SodPolicyV2025StateV2025.Enforced : SodPolicyV2025StateV2025.NotEnforced
         // Submit the new Policy via API
-        const policyApi = new SODPoliciesApi(apiConfig)
-        const newPolicyRequest: SODPoliciesApiCreateSodPolicyRequest = {
-            sodPolicy: {
+        const policyApi = new SODPoliciesV2025Api(apiConfig)
+        const newPolicyRequest: SODPoliciesV2025ApiCreateSodPolicyRequest = {
+            sodPolicyV2025: {
                 name: policyConfig.policyName,
                 description: policyConfig.policyDescription,
                 ownerRef: policyOwner,
@@ -700,7 +701,7 @@ export class IscClient {
                 state: policyState,
                 tags: policyConfig.tags,
                 violationOwnerAssignmentConfig: violationOwner,
-                type: SodPolicyTypeEnum.ConflictingAccessBased,
+                type: SodPolicyV2025TypeV2025.ConflictingAccessBased,
                 conflictingAccessCriteria: conflictingAccessCriteria
             }
         }
@@ -723,59 +724,59 @@ export class IscClient {
     async updatePolicy(apiConfig: Configuration, existingPolicyId: string, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyQuery: string]> {
         let errorMessage = ""
         let policyQuery = ""
-        let policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
+        let policyState = policyConfig.policyState ? SodPolicyV2025StateV2025.Enforced : SodPolicyV2025StateV2025.NotEnforced
         // Submit the patch Policy via API
-        const policyApi = new SODPoliciesApi(apiConfig)
-        const patchPolicyRequest: SODPoliciesApiPatchSodPolicyRequest = {
+        const policyApi = new SODPoliciesV2025Api(apiConfig)
+        const patchPolicyRequest: SODPoliciesV2025ApiPatchSodPolicyRequest = {
             id: existingPolicyId,
-            jsonPatchOperation: [
+            jsonPatchOperationV2025: [
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/name",
                     value: policyConfig.policyName
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/description",
                     value: policyConfig.policyDescription
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/ownerRef",
                     value: policyOwner
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/externalPolicyReference",
                     value: policyConfig.externalReference
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/compensatingControls",
                     value: policyConfig.mitigatingControls
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/correctionAdvice",
                     value: policyConfig.correctionAdvice
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/state",
                     value: policyState
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/tags",
                     value: policyConfig.tags
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/violationOwnerAssignmentConfig",
                     value: violationOwner
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/conflictingAccessCriteria",
                     value: conflictingAccessCriteria
                 },
@@ -797,10 +798,10 @@ export class IscClient {
     async setPolicySchedule(apiConfig: Configuration, policyId: string, policyConfig: PolicyConfig, policySchedule: any, policyRecipients: any): Promise<string> {
         let errorMessage = ""
         // Update the Policy Schedule via API
-        const policyApi = new SODPoliciesApi(apiConfig)
-        const setPolicyScheduleRequest: SODPoliciesApiPutPolicyScheduleRequest = {
+        const policyApi = new SODPoliciesV2025Api(apiConfig)
+        const setPolicyScheduleRequest: SODPoliciesV2025ApiPutPolicyScheduleRequest = {
             id: policyId,
-            sodPolicySchedule: {
+            sodPolicyScheduleV2025: {
                 name: `${policyConfig.policySchedule}: ${policyConfig.policyName}`,
                 description: policyConfig.policyDescription,
                 schedule: policySchedule,
@@ -820,8 +821,8 @@ export class IscClient {
     async deletePolicyCampaign(apiConfig: Configuration, campaignId: string): Promise<string> {
         let errorMessage = ""
         // Delete the Campaign via API
-        const certsApi = new CertificationCampaignsApi(apiConfig)
-        const deleteCampaignTemplareRequest: CertificationCampaignsApiDeleteCampaignTemplateRequest = {
+        const certsApi = new CertificationCampaignsV2025Api(apiConfig)
+        const deleteCampaignTemplareRequest: CertificationCampaignsV2025ApiDeleteCampaignTemplateRequest = {
             id: campaignId
         }
         try {
@@ -834,30 +835,30 @@ export class IscClient {
         return errorMessage
     }
 
-    async createPolicyCampaign(apiConfig: Configuration, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: AccessConstraint[], violationOwner: CampaignAllOfSearchCampaignInfoReviewer | undefined, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
+    async createPolicyCampaign(apiConfig: Configuration, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: AccessConstraintV2025[], violationOwner: CampaignAllOfSearchCampaignInfoReviewerV2025 | undefined, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
         let errorMessage = ""
         let campaignId = ""
         let reviewer
-        if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
+        if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Manager) {
             reviewer = violationOwner
         }
         // Create new campaign using API
-        const certsApi = new CertificationCampaignsApi(apiConfig)
-        const createCampaignRequest: CertificationCampaignsApiCreateCampaignTemplateRequest = {
-            campaignTemplate: {
+        const certsApi = new CertificationCampaignsV2025Api(apiConfig)
+        const createCampaignRequest: CertificationCampaignsV2025ApiCreateCampaignTemplateRequest = {
+            campaignTemplateV2025: {
                 name: policyConfig.certificationName,
                 description: policyConfig.certificationDescription,
                 deadlineDuration: this.campaignDuration,
                 campaign: {
                     name: policyConfig.certificationName,
                     description: policyConfig.certificationDescription,
-                    type: CampaignTypeEnum.Search,
-                    correlatedStatus: CampaignCorrelatedStatusEnum.Correlated,
+                    type: CampaignV2025TypeV2025.Search,
+                    correlatedStatus: CampaignV2025CorrelatedStatusV2025.Correlated,
                     recommendationsEnabled: true,
                     emailNotificationEnabled: true,
                     sunsetCommentsRequired: true,
                     searchCampaignInfo: {
-                        type: CampaignAllOfSearchCampaignInfoTypeEnum.Identity,
+                        type: CampaignAllOfSearchCampaignInfoV2025TypeV2025.Identity,
                         description: policyConfig.certificationDescription,
                         reviewer: reviewer,
                         query: policyQuery,
@@ -884,56 +885,56 @@ export class IscClient {
     async updatePolicyCampaign(apiConfig: Configuration, campaignId: string, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: any, violationOwner: any): Promise<string> {
         let errorMessage = ""
         let reviewer = null
-        if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
+        if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Manager) {
             reviewer = violationOwner
         }
         // Update existing campaign using API
-        const certsApi = new CertificationCampaignsApi(apiConfig)
-        const patchCampaignRequest: CertificationCampaignsApiUpdateCampaignRequest = {
+        const certsApi = new CertificationCampaignsV2025Api(apiConfig)
+        const patchCampaignRequest: CertificationCampaignsV2025ApiUpdateCampaignRequest = {
             id: campaignId,
-            jsonPatchOperation: [
+            jsonPatchOperationV2025: [
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/name",
                     value: policyConfig.certificationName
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/description",
                     value: policyConfig.certificationDescription
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/deadlineDuration",
                     value: this.campaignDuration
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/campaign/name",
                     value: policyConfig.certificationName
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/campaign/description",
                     value: policyConfig.certificationDescription
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/campaign/searchCampaignInfo/description",
                     value: policyConfig.certificationDescription
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/campaign/searchCampaignInfo/reviewer",
                     value: reviewer
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/campaign/searchCampaignInfo/query",
                     value: policyQuery
                 },
                 {
-                    op: JsonPatchOperationOpEnum.Replace,
+                    op: JsonPatchOperationV2025OpV2025.Replace,
                     path: "/campaign/searchCampaignInfo/accessConstraints",
                     value: accessConstraints
                 }
@@ -949,13 +950,13 @@ export class IscClient {
         return errorMessage
     }
 
-    async setCampaignSchedule(apiConfig: Configuration, campaignId: string, campaignSchedule: Schedule): Promise<string> {
+    async setCampaignSchedule(apiConfig: Configuration, campaignId: string, campaignSchedule: ScheduleV2025): Promise<string> {
         let errorMessage = ""
         // Update the Campaign Schedule via API
-        const certsApi = new CertificationCampaignsApi(apiConfig)
-        const setCampaignScheduleRequest: CertificationCampaignsApiSetCampaignTemplateScheduleRequest = {
+        const certsApi = new CertificationCampaignsV2025Api(apiConfig)
+        const setCampaignScheduleRequest: CertificationCampaignsV2025ApiSetCampaignTemplateScheduleRequest = {
             id: campaignId,
-            schedule: campaignSchedule
+            scheduleV2025: campaignSchedule
         }
         try {
             const newCampaignSchedule = await certsApi.setCampaignTemplateSchedule(setCampaignScheduleRequest)
@@ -1043,7 +1044,7 @@ export class IscClient {
             // Prepare Violation Owner refereneces
             const violationOwner = await this.resolveViolationOwner(apiConfig, policyConfig)
             // Error if Violation Owner cannot be resolved/found
-            if (!violationOwner && policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
+            if (!violationOwner && policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Manager) {
                 canProcess = false
                 errorMessages.push(`Unable to resolve Violation Manager. Type: ${policyConfig.violationOwnerType}, Value: ${policyConfig.violationOwner}`)
             }
