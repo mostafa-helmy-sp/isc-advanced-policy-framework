@@ -544,7 +544,7 @@ export class IscClient {
 
     buildEntitlementNameArray(items: any[]): string[] {
         let names: string[] = []
-        items.forEach(item => names.push(`Source: ${item.source.name}, Type: ${item.schema}, Name: ${item.name}`))
+        items.forEach(item => names.push(`Source: ${item?.source?.name || 'N/A'}, Type: ${item?.schema || 'N/A'}, Name: ${item?.name || 'N/A'}`))
         return names
     }
 
