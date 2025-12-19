@@ -1,6 +1,6 @@
 {
   "name": "advanced-policy-framework",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "main": "dist/index.js",
   "scripts": {
     "clean": "shx rm -rf ./dist",
@@ -14,19 +14,19 @@
   },
   "private": true,
   "dependencies": {
-    "@sailpoint/connector-sdk": "^1.1.33",
-    "sailpoint-api-client": "^1.6.9"
+    "@sailpoint/connector-sdk": "^1.1.36",
+    "sailpoint-api-client": "^1.7.0"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.5.2",
+    "@types/node": "^24.10.4",
     "@vercel/ncc": "^0.38.4",
-    "cross-env": "^10.0.0",
-    "jest": "^30.1.3",
-    "prettier": "^3.6.2",
+    "cross-env": "^10.1.0",
+    "jest": "^30.2.0",
+    "prettier": "^3.7.4",
     "shx": "^0.4.0",
-    "ts-jest": "^29.4.4",
-    "typescript": "^5.9.2"
+    "ts-jest": "^29.4.6",
+    "typescript": "^5.9.3"
   },
   "jest": {
     "preset": "ts-jest",

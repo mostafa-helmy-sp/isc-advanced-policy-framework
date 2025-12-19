@@ -1,12 +1,13 @@
 import {
     ConnectorError,
     logger
-} from "@sailpoint/connector-sdk"
+} from '@sailpoint/connector-sdk'
 import {
     Configuration,
     ConfigurationParameters,
     SourcesV2025Api,
     SourcesV2025ApiListSourcesRequest,
+    SourcesV2025ApiGetSourceSchemasRequest,
     AccountV2025,
     AccountsV2025Api,
     AccountsV2025ApiListAccountsRequest,
@@ -54,36 +55,48 @@ import {
     CertificationCampaignsV2025ApiDeleteCampaignTemplateRequest,
     CertificationCampaignsV2025ApiCreateCampaignTemplateRequest,
     CertificationCampaignsV2025ApiSetCampaignTemplateScheduleRequest,
-    JsonPatchOperationV2025OpV2025
-} from "sailpoint-api-client"
-import { PolicyConfig } from "./model/policy-config"
-import { PolicyImpl } from "./model/policy-impl"
-import axiosRetry from "axios-retry"
+    JsonPatchOperationV2025OpV2025,
+    EntitlementsV2025Api,
+    EntitlementsV2025ApiListEntitlementChildrenRequest,
+    EntitlementsV2025ApiListEntitlementParentsRequest
+} from 'sailpoint-api-client'
+import { PolicyConfig } from './model/policy-config'
+import { PolicyImpl } from './model/policy-impl'
+import axiosRetry from 'axios-retry'
 
 // Set IDN Global Variables
-var tokenUrlPath = "/oauth/token"
+var tokenUrlPath = '/oauth/token'
 var maxHoursPerCampaignSchedule = 1
 var maxWeeklyDaysPerCampaignSchedule = 1
 var maxMonthlyDaysPerCampaignSchedule = 4
 
 // Set Source Config Global Defaults
-var defaultIdentityResolutionAttribute = "name"
-var defaultHourlyScheduleDay = ["9"]
-var defaultWeeklyScheduleDay = ["MON"]
-var defaultMonthlyScheduleDay = ["1"]
-var defaultCampaignDuration = "P2W"
+var defaultIdentityResolutionAttribute = 'name'
+var defaultHourlyScheduleDay = ['9']
+var defaultWeeklyScheduleDay = ['MON']
+var defaultMonthlyScheduleDay = ['1']
+var defaultCampaignDuration = 'P2W'
 var defaultMaxEntitlementsPerPolicySide = 400
 var defaultMaxAccessItemsPerCampaign = 10000
 
+// Cache for Entitlement Hierarchy Direction
+var entitlementHierarchyCache: Record<string, EntitlementHierarchy> = {}
+
 export enum PolicyType {
-    SOD = "SOD"
+    SOD = 'SOD'
 }
 
 export enum PolicyAction {
-    REPORT = "REPORT",
-    CERTIFY = "CERTIFY",
-    DELETE_ALL = "DELETE_ALL",
-    DELETE_CAMPAIGN = "DELETE_CAMPAIGN"
+    REPORT = 'REPORT',
+    CERTIFY = 'CERTIFY',
+    DELETE_ALL = 'DELETE_ALL',
+    DELETE_CAMPAIGN = 'DELETE_CAMPAIGN'
+}
+
+export enum EntitlementHierarchy {
+    CHILD = 'CHILD',
+    PARENT = 'PARENT',
+    NONE = 'NONE'
 }
 
 export class IscClient {
@@ -100,6 +113,7 @@ export class IscClient {
     private maxEntitlementsPerPolicySide: number
     private maxAccessItemsPerCampaign: number
     private parallelProcessing: boolean
+    private resolveNestedEntitlements: boolean
 
     createApiConfig() {
         // Configure the SailPoint SDK API Client
@@ -137,6 +151,7 @@ export class IscClient {
         this.maxEntitlementsPerPolicySide = config.maxEntitlementsPerPolicySide || defaultMaxEntitlementsPerPolicySide
         this.maxAccessItemsPerCampaign = config.maxAccessItemsPerCampaign || defaultMaxAccessItemsPerCampaign
         this.parallelProcessing = config.parallelProcessing || false
+        this.resolveNestedEntitlements = config.resolveNestedEntitlements || false
     }
 
     isParallelProcessing(): boolean {
@@ -148,7 +163,7 @@ export class IscClient {
         // Check if Source ID is null
         if (!this.policyConfigSourceId) {
             // Get and set Source ID if not already set
-            logger.debug("Policy Config Source ID not set, getting the ID using the Sources API")
+            logger.debug('Policy Config Source ID not set, getting the ID using the Sources API')
             const sourceApi = new SourcesV2025Api(this.apiConfig)
             const sourcesRequest: SourcesV2025ApiListSourcesRequest = {
                 filters: filter
@@ -161,7 +176,7 @@ export class IscClient {
             } catch (error) {
                 let errorMessage = `Error retrieving Policy Configurations Source ID using Sources API: ${error instanceof Error ? error.message : error}`
                 logger.error(sourcesRequest, errorMessage)
-                logger.debug(error, "Failed Sources API request")
+                logger.debug(error, 'Failed Sources API request')
                 throw new ConnectorError(errorMessage)
             }
         }
@@ -180,13 +195,13 @@ export class IscClient {
             filters: filter
         }
         try {
-            const accounts = await Paginator.paginate(accountsApi, accountsApi.listAccounts, { filters: filter })
+            const accounts = await Paginator.paginate(accountsApi, accountsApi.listAccounts, accountsRequest)
             logger.debug(`Found ${accounts.data.length} Policy Configurations`)
             return accounts.data
         } catch (error) {
             let errorMessage = `Error retrieving Policy Configurations from the Policy Config Source using ListAccounts API: ${error instanceof Error ? error.message : error}`
             logger.error(accountsRequest, errorMessage)
-            logger.debug(error, "Failed ListAccounts API request")
+            logger.debug(error, 'Failed ListAccounts API request')
             throw new ConnectorError(errorMessage)
         }
     }
@@ -207,7 +222,7 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error retrieving single Policy Configuration from the Policy Config Source using ListAccounts API: ${error instanceof Error ? error.message : error}`
             logger.error(accountsRequest, errorMessage)
-            logger.debug(error, "Failed ListAccounts API request")
+            logger.debug(error, 'Failed ListAccounts API request')
             throw new ConnectorError(errorMessage)
         }
     }
@@ -229,7 +244,7 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding existing Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(findPolicyRequest, errorMessage)
-            logger.debug(error, "Failed SOD-Policies API request")
+            logger.debug(error, 'Failed SOD-Policies API request')
             return
         }
     }
@@ -251,33 +266,13 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding existing Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(findCampaignRequest, errorMessage)
-            logger.debug(error, "Failed Certification-Campaigns API request")
+            logger.debug(error, 'Failed Certification-Campaigns API request')
             return
         }
     }
 
-    buildIdQuery(items: any[], itemPrefix: string, joiner: string, prefix?: string, suffix?: string): string {
-        let query = ""
-        // Add global prefix, e.g.: "@entitlements("
-        if (prefix) {
-            query += prefix
-        }
-        let count = 0
-        for (const item of items) {
-            // Add joiner first unless first item, e.g.: " OR "
-            if (count > 0) {
-                query += joiner
-            }
-            // Add item prefix, e.g.: "id:"
-            query += itemPrefix
-            query += item.id
-            count++
-        }
-        // Add global suffix, e.g.: ")"
-        if (suffix) {
-            query += suffix
-        }
-        return query
+    mergeUnique(items1: any[], items2: any[]): any[] {
+        return [... new Set([...items1, ...items2])]
     }
 
     buildIdArray(items: any[]): string[] {
@@ -286,8 +281,32 @@ export class IscClient {
         return ids
     }
 
-    mergeUnique(items1: any[], items2: any[]): any[] {
-        return [... new Set([...items1, ...items2])]
+    buildIdQueryFromItems(items: any[], itemPrefix: string, joiner: string, prefix?: string, suffix?: string): string {
+        return this.buildIdQuery(this.buildIdArray(items), itemPrefix, joiner, prefix, suffix)
+    }
+
+    buildIdQuery(ids: string[], itemPrefix: string, joiner: string, prefix?: string, suffix?: string): string {
+        let query = ''
+        // Add global prefix, e.g.: '@entitlements('
+        if (prefix) {
+            query += prefix
+        }
+        let count = 0
+        for (const id of ids) {
+            // Add joiner first unless first item, e.g.: ' OR '
+            if (count > 0) {
+                query += joiner
+            }
+            // Add id prefix, e.g.: 'id:'
+            query += itemPrefix
+            query += id
+            count++
+        }
+        // Add global suffix, e.g.: ')'
+        if (suffix) {
+            query += suffix
+        }
+        return query
     }
 
     async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<EntitlementDocumentV2025[]> {
@@ -301,14 +320,15 @@ export class IscClient {
             },
             queryResultFilter: {
                 includes: [
-                    "id",
-                    "name",
-                    "schema",
-                    "type",
-                    "source.name"
+                    'id',
+                    'name',
+                    'schema',
+                    'type',
+                    'source.name',
+                    'source.id'
                 ]
             },
-            sort: ["id"]
+            sort: ['id']
         }
         try {
             const entitlements = (await Paginator.paginateSearchApi(searchApi, search)).data as EntitlementDocumentV2025[]
@@ -316,16 +336,160 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding entitlements using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(error, "Failed Search API request")
+            logger.debug(error, 'Failed Search API request')
             return []
         }
+    }
+
+    async fetchEntitlementHierarchyDirection(apiConfig: Configuration, entitlement: EntitlementDocumentV2025): Promise<EntitlementHierarchy> {
+        // Check if the entitlement has a source
+        if (!entitlement.source) {
+            return EntitlementHierarchy.NONE
+        }
+        // Get the source schemas
+        const sourceApi = new SourcesV2025Api(apiConfig)
+        const getSchemasRequest: SourcesV2025ApiGetSourceSchemasRequest = {
+            sourceId: entitlement.source?.id || 'N/A'
+        }
+        try {
+            const schemas = await sourceApi.getSourceSchemas(getSchemasRequest)
+            // No hierarchy if no schemas found
+            if (!schemas.data || schemas.data.length == 0) {
+                return EntitlementHierarchy.NONE
+            }
+            // Find the schema for the entitlement
+            const schema = schemas.data.find(schema => schema.name?.toLowerCase() === entitlement.schema?.toLowerCase())
+            // No hierarchy if entitlement type has no schema or no hierarchy attribute
+            if (!schema || !schema.hierarchyAttribute) {
+                return EntitlementHierarchy.NONE
+            }
+            const childHierarchy = (schema.configuration as any)?.childHierarchy
+            // Parent entitlements are required if childHierarchy is set to true
+            // otherwise child entitlements are required
+            if (childHierarchy && (childHierarchy === true || childHierarchy === "true" || childHierarchy === "True")) {
+                return EntitlementHierarchy.PARENT
+            }
+            return EntitlementHierarchy.CHILD
+        } catch (error) {
+            let errorMessage = `Error getting source schemas using Sources API: ${error instanceof Error ? error.message : error}`
+            logger.error(getSchemasRequest, errorMessage)
+            logger.debug(error, 'Failed Sources API request')
+            return EntitlementHierarchy.NONE
+        }
+    }
+
+    getEntitlementSchemaKey(entitlement: EntitlementDocumentV2025): string | undefined {
+        if (!entitlement.source || !entitlement.source.id || !entitlement.schema) {
+            return undefined
+        }
+        return `${entitlement.source.id}:${entitlement.schema}`
+    }
+
+    async getEntitlementHierarchyDirection(apiConfig: Configuration, entitlement: EntitlementDocumentV2025): Promise<EntitlementHierarchy> {
+        const key = this.getEntitlementSchemaKey(entitlement)
+        logger.debug(`Key for entitlement {${entitlement.id}:${entitlement.name}} is ${key}`)
+        logger.debug(`Cache before lookup: ${JSON.stringify(entitlementHierarchyCache)}`)
+        if (!key) {
+            return EntitlementHierarchy.NONE
+        }
+        if (entitlementHierarchyCache[key]) {
+            return entitlementHierarchyCache[key]
+        }
+        const hierarchyDirection = await this.fetchEntitlementHierarchyDirection(apiConfig, entitlement)
+        entitlementHierarchyCache[key] = hierarchyDirection
+        logger.debug(`Entitlement hierarchy direction for entitlement {${entitlement.id}:${entitlement.name}} is ${hierarchyDirection}`)
+        logger.debug(`Cache after update: ${JSON.stringify(entitlementHierarchyCache)}`)
+        return hierarchyDirection
+    }
+
+    async getChildEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<string[]> {
+        logger.debug(`>> Fetching Child Entitlement IDs for entitlement: {${entitlementId}}`)
+        // Return nothing if no id is passed in (needed for recursion)
+        if (!entitlementId) {
+            return []
+        }
+        // Fetch all child entitlements
+        const entitlementsApi = new EntitlementsV2025Api(apiConfig)
+        const listChildEntitlementsRequest: EntitlementsV2025ApiListEntitlementChildrenRequest = {
+            id: entitlementId
+        }
+        try {
+            const childEntitlements = await Paginator.paginate(entitlementsApi, entitlementsApi.listEntitlementChildren, listChildEntitlementsRequest)
+            logger.debug(`>> Found ${childEntitlements.data.length} Child Entitlement IDs for entitlement: {${entitlementId}}`)
+            // Return nothing if no child entitlements found
+            if (childEntitlements.data.length == 0) {
+                return []
+            }
+            // Recursive lookup of children to find all the tree and return a deduplicated list
+            const allNested = await Promise.all(childEntitlements.data.map(childEntitlement => this.getChildEntitlementIds(apiConfig, childEntitlement.id)))
+            return [...new Set([...allNested.flat(), ...this.buildIdArray(childEntitlements.data)])]
+        } catch (error) {
+            let errorMessage = `Error getting child entitlements using Entitlements API: ${error instanceof Error ? error.message : error}`
+            logger.error(listChildEntitlementsRequest, errorMessage)
+            logger.debug(error, 'Failed Entitlements API request')
+            return []
+        }
+    }
+
+    async getParentEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<string[]> {
+        logger.debug(`>> Fetching Parent Entitlement IDs for entitlement: {${entitlementId}}`)
+        // Return nothing if no id is passed in (needed for recursion)
+        if (!entitlementId) {
+            return []
+        }
+        // Fetch all parent entitlements
+        const entitlementsApi = new EntitlementsV2025Api(apiConfig)
+        const listParentEntitlementsRequest: EntitlementsV2025ApiListEntitlementParentsRequest = {
+            id: entitlementId
+        }
+        try {
+            const parentEntitlements = await Paginator.paginate(entitlementsApi, entitlementsApi.listEntitlementParents, listParentEntitlementsRequest)
+            logger.debug(`>> Found ${parentEntitlements.data.length} Parent Entitlement IDs for entitlement: {${entitlementId}}`)
+            // Return nothing if no parent entitlements found
+            if (parentEntitlements.data.length == 0) {
+                return []
+            }
+            // Recursive lookup of parent to find all the tree and return a deduplicated list
+            const allNested = await Promise.all(parentEntitlements.data.map(parentEntitlement => this.getParentEntitlementIds(apiConfig, parentEntitlement.id)))
+            return [...new Set([...allNested.flat(), ...this.buildIdArray(parentEntitlements.data)])]
+        } catch (error) {
+            let errorMessage = `Error getting parent entitlements using Entitlements API: ${error instanceof Error ? error.message : error}`
+            logger.error(listParentEntitlementsRequest, errorMessage)
+            logger.debug(error, 'Failed Entitlements API request')
+            return []
+        }
+    }
+
+    async getEntitlementHierarchy(apiConfig: Configuration, entitlement: EntitlementDocumentV2025): Promise<EntitlementDocumentV2025[]> {
+        const hierarchyDirection = await this.getEntitlementHierarchyDirection(apiConfig, entitlement)
+        let entitlementIds: string[] = []
+        if (hierarchyDirection === EntitlementHierarchy.CHILD) {
+            entitlementIds = await this.getChildEntitlementIds(apiConfig, entitlement.id)
+        }
+        if (hierarchyDirection === EntitlementHierarchy.PARENT) {
+            entitlementIds = await this.getParentEntitlementIds(apiConfig, entitlement.id)
+        }
+        logger.debug(`Found ${entitlementIds.length} ${hierarchyDirection} entitlements in the hierarchy for entitlement: {${entitlement.id}:${entitlement.name}}`)
+        if (entitlementIds.length == 0) {
+            return [entitlement]
+        }
+        // Use search to fetch all the entitlement hierarchy details
+        const query = this.buildIdQuery(entitlementIds, 'id:', ' OR ')
+        const allNested = await this.searchEntitlementsByQuery(apiConfig, query)
+        return [entitlement, ...allNested]
+    }
+
+    async includeEntitlementHierarchy(apiConfig: Configuration, entitlements: EntitlementDocumentV2025[]): Promise<EntitlementDocumentV2025[]> {
+        const allHierarchy = await Promise.all(entitlements.map(entitlement => this.getEntitlementHierarchy(apiConfig, entitlement)))
+        // Deduplicate using a Map then return as an array
+        return [...(new Map(allHierarchy.flat().map(item => [item.id, item])).values())]
     }
 
     async searchAccessProfilesbyEntitlements(apiConfig: Configuration, entitlements: any[]): Promise<AccessProfileDocumentV2025[]> {
         if (!entitlements || entitlements.length == 0) {
             return []
         }
-        const query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
+        const query = this.buildIdQueryFromItems(entitlements, 'id:', ' OR ', '@entitlements(', ')')
         const searchApi = new SearchApi(apiConfig)
         const search: SearchV2025 = {
             indices: [
@@ -336,13 +500,13 @@ export class IscClient {
             },
             queryResultFilter: {
                 includes: [
-                    "id",
-                    "name",
-                    "type",
-                    "source.name"
+                    'id',
+                    'name',
+                    'type',
+                    'source.name'
                 ]
             },
-            sort: ["id"]
+            sort: ['id']
         }
         try {
             const accessProfiles: AccessProfileDocumentV2025[] = (await Paginator.paginateSearchApi(searchApi, search)).data as AccessProfileDocumentV2025[]
@@ -350,7 +514,7 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding access profiles using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(error, "Failed Search API request")
+            logger.debug(error, 'Failed Search API request')
             return []
         }
     }
@@ -358,13 +522,13 @@ export class IscClient {
     async searchRolesByAccessProfilesOrEntitlements(apiConfig: Configuration, entitlements: any[], accessProfiles: any[]): Promise<RoleDocumentV2025[]> {
         let query
         if (entitlements && entitlements.length > 0) {
-            query = this.buildIdQuery(entitlements, "id:", " OR ", "@entitlements(", ")")
+            query = this.buildIdQueryFromItems(entitlements, 'id:', ' OR ', '@entitlements(', ')')
         }
         if (accessProfiles && accessProfiles.length > 0) {
             if (!query) {
-                query = this.buildIdQuery(accessProfiles, "accessProfiles.id:", " OR ")
+                query = this.buildIdQueryFromItems(accessProfiles, 'accessProfiles.id:', ' OR ')
             } else {
-                query += this.buildIdQuery(accessProfiles, "accessProfiles.id:", " OR ", " OR ")
+                query += this.buildIdQueryFromItems(accessProfiles, 'accessProfiles.id:', ' OR ', ' OR ')
             }
         }
         if (!query) {
@@ -380,12 +544,12 @@ export class IscClient {
             },
             queryResultFilter: {
                 includes: [
-                    "id",
-                    "name",
-                    "type"
+                    'id',
+                    'name',
+                    'type'
                 ]
             },
-            sort: ["id"]
+            sort: ['id']
         }
         try {
             const roles: RoleDocumentV2025[] = (await Paginator.paginateSearchApi(searchApi, search)).data as RoleDocumentV2025[]
@@ -393,15 +557,15 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding roles using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(error, "Failed Search API request")
+            logger.debug(error, 'Failed Search API request')
             return []
         }
     }
 
     async searchIdentityByAttribute(apiConfig: Configuration, attribute: string, value: string): Promise<any> {
         const searchApi = new SearchApi(apiConfig)
-        let query = ""
-        if (attribute === "name" || attribute === "employeeNumber" || attribute === "id") {
+        let query = ''
+        if (attribute === 'name' || attribute === 'employeeNumber' || attribute === 'id') {
             query = `${attribute}.exact:"${value}"`
         } else {
             query = `attributes.${attribute}.exact:"${value}"`
@@ -415,12 +579,12 @@ export class IscClient {
             },
             queryResultFilter: {
                 includes: [
-                    "id",
-                    "name",
-                    "type"
+                    'id',
+                    'name',
+                    'type'
                 ]
             },
-            sort: ["id"]
+            sort: ['id']
         }
         try {
             const identities: IdentityDocumentV2025[] = await (await Paginator.paginateSearchApi(searchApi, search)).data as IdentityDocumentV2025[]
@@ -435,7 +599,7 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding identity using Search API: ${error instanceof Error ? error.message : error}`
             logger.error(search, errorMessage)
-            logger.debug(error, "Failed Search API request")
+            logger.debug(error, 'Failed Search API request')
             return
         }
     }
@@ -459,7 +623,7 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding Governance Group using Governance-Groups API: ${error instanceof Error ? error.message : error}`
             logger.error(findGovGroupRequest, errorMessage)
-            logger.debug(error, "Failed Governance-Groups API request")
+            logger.debug(error, 'Failed Governance-Groups API request')
             return
         }
     }
@@ -470,7 +634,7 @@ export class IscClient {
             workgroupId: govGroupId
         }
         try {
-            const govGroupMembers = await Paginator.paginate(govGroupApi, govGroupApi.listWorkgroupMembers, { workgroupId: govGroupId })
+            const govGroupMembers = await Paginator.paginate(govGroupApi, govGroupApi.listWorkgroupMembers, findGovGroupMembersRequest)
             // Check if no governance group members exist
             if (govGroupMembers.data.length == 0) {
                 return []
@@ -483,7 +647,7 @@ export class IscClient {
         } catch (error) {
             let errorMessage = `Error finding Governance Group members using Governance-Groups API: ${error instanceof Error ? error.message : error}`
             logger.error(findGovGroupMembersRequest, errorMessage)
-            logger.debug(error, "Failed Governance-Groups API request")
+            logger.debug(error, 'Failed Governance-Groups API request')
             return []
         }
     }
@@ -667,7 +831,7 @@ export class IscClient {
     }
 
     async deletePolicy(apiConfig: Configuration, policyId: string): Promise<string> {
-        let errorMessage = ""
+        let errorMessage = ''
         // Delete the Policy via API
         const policyApi = new SODPoliciesV2025Api(apiConfig)
         const deletePolicyRequest: SODPoliciesV2025ApiDeleteSodPolicyRequest = {
@@ -678,15 +842,15 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error deleting existing policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(deletePolicyRequest, errorMessage)
-            logger.debug(error, "Failed SOD-Policies API request")
+            logger.debug(error, 'Failed SOD-Policies API request')
         }
         return errorMessage
     }
 
     async createPolicy(apiConfig: Configuration, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyId: string, policyQuery: string]> {
-        let errorMessage = ""
-        let policyId = ""
-        let policyQuery = ""
+        let errorMessage = ''
+        let policyId = ''
+        let policyQuery = ''
         let policyState = policyConfig.policyState ? SodPolicyV2025StateV2025.Enforced : SodPolicyV2025StateV2025.NotEnforced
         // Submit the new Policy via API
         const policyApi = new SODPoliciesV2025Api(apiConfig)
@@ -716,14 +880,14 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error creating a new Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(newPolicyRequest, errorMessage)
-            logger.debug(error, "Failed SOD-Policies API request")
+            logger.debug(error, 'Failed SOD-Policies API request')
         }
         return [errorMessage, policyId, policyQuery]
     }
 
     async updatePolicy(apiConfig: Configuration, existingPolicyId: string, policyConfig: PolicyConfig, policyOwner: any, violationOwner: any, conflictingAccessCriteria: any): Promise<[errorMessage: string, policyQuery: string]> {
-        let errorMessage = ""
-        let policyQuery = ""
+        let errorMessage = ''
+        let policyQuery = ''
         let policyState = policyConfig.policyState ? SodPolicyV2025StateV2025.Enforced : SodPolicyV2025StateV2025.NotEnforced
         // Submit the patch Policy via API
         const policyApi = new SODPoliciesV2025Api(apiConfig)
@@ -732,52 +896,52 @@ export class IscClient {
             jsonPatchOperationV2025: [
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/name",
+                    path: '/name',
                     value: policyConfig.policyName
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/description",
+                    path: '/description',
                     value: policyConfig.policyDescription
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/ownerRef",
+                    path: '/ownerRef',
                     value: policyOwner
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/externalPolicyReference",
+                    path: '/externalPolicyReference',
                     value: policyConfig.externalReference
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/compensatingControls",
+                    path: '/compensatingControls',
                     value: policyConfig.mitigatingControls
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/correctionAdvice",
+                    path: '/correctionAdvice',
                     value: policyConfig.correctionAdvice
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/state",
+                    path: '/state',
                     value: policyState
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/tags",
+                    path: '/tags',
                     value: policyConfig.tags
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/violationOwnerAssignmentConfig",
+                    path: '/violationOwnerAssignmentConfig',
                     value: violationOwner
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/conflictingAccessCriteria",
+                    path: '/conflictingAccessCriteria',
                     value: conflictingAccessCriteria
                 },
             ]
@@ -790,13 +954,13 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error updating existing Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(patchPolicyRequest, errorMessage)
-            logger.debug(error, "Failed SOD-Policies API request")
+            logger.debug(error, 'Failed SOD-Policies API request')
         }
         return [errorMessage, policyQuery]
     }
 
     async setPolicySchedule(apiConfig: Configuration, policyId: string, policyConfig: PolicyConfig, policySchedule: any, policyRecipients: any): Promise<string> {
-        let errorMessage = ""
+        let errorMessage = ''
         // Update the Policy Schedule via API
         const policyApi = new SODPoliciesV2025Api(apiConfig)
         const setPolicyScheduleRequest: SODPoliciesV2025ApiPutPolicyScheduleRequest = {
@@ -813,13 +977,13 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error setting Policy Schedule using SOD-Policies API: ${error instanceof Error ? error.message : error}`
             logger.error(setPolicyScheduleRequest, errorMessage)
-            logger.debug(error, "Failed SOD-Policies API request")
+            logger.debug(error, 'Failed SOD-Policies API request')
         }
         return errorMessage
     }
 
     async deletePolicyCampaign(apiConfig: Configuration, campaignId: string): Promise<string> {
-        let errorMessage = ""
+        let errorMessage = ''
         // Delete the Campaign via API
         const certsApi = new CertificationCampaignsV2025Api(apiConfig)
         const deleteCampaignTemplareRequest: CertificationCampaignsV2025ApiDeleteCampaignTemplateRequest = {
@@ -830,14 +994,14 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error deleting existing campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(deleteCampaignTemplareRequest, errorMessage)
-            logger.debug(error, "Failed Certification-Campaigns API request")
+            logger.debug(error, 'Failed Certification-Campaigns API request')
         }
         return errorMessage
     }
 
     async createPolicyCampaign(apiConfig: Configuration, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: AccessConstraintV2025[], violationOwner: CampaignAllOfSearchCampaignInfoReviewerV2025 | undefined, nullValue: any): Promise<[errorMessage: string, campaignId: string]> {
-        let errorMessage = ""
-        let campaignId = ""
+        let errorMessage = ''
+        let campaignId = ''
         let reviewer
         if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Manager) {
             reviewer = violationOwner
@@ -877,13 +1041,13 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error creating new Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(createCampaignRequest, errorMessage)
-            logger.debug(error, "Failed Certification-Campaigns API request")
+            logger.debug(error, 'Failed Certification-Campaigns API request')
         }
         return [errorMessage, campaignId]
     }
 
     async updatePolicyCampaign(apiConfig: Configuration, campaignId: string, policyConfig: PolicyConfig, policyQuery: string, accessConstraints: any, violationOwner: any): Promise<string> {
-        let errorMessage = ""
+        let errorMessage = ''
         let reviewer = null
         if (policyConfig.violationOwnerType != ViolationOwnerAssignmentConfigV2025AssignmentRuleV2025.Manager) {
             reviewer = violationOwner
@@ -895,47 +1059,47 @@ export class IscClient {
             jsonPatchOperationV2025: [
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/name",
+                    path: '/name',
                     value: policyConfig.certificationName
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/description",
+                    path: '/description',
                     value: policyConfig.certificationDescription
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/deadlineDuration",
+                    path: '/deadlineDuration',
                     value: this.campaignDuration
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/campaign/name",
+                    path: '/campaign/name',
                     value: policyConfig.certificationName
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/campaign/description",
+                    path: '/campaign/description',
                     value: policyConfig.certificationDescription
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/campaign/searchCampaignInfo/description",
+                    path: '/campaign/searchCampaignInfo/description',
                     value: policyConfig.certificationDescription
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/campaign/searchCampaignInfo/reviewer",
+                    path: '/campaign/searchCampaignInfo/reviewer',
                     value: reviewer
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/campaign/searchCampaignInfo/query",
+                    path: '/campaign/searchCampaignInfo/query',
                     value: policyQuery
                 },
                 {
                     op: JsonPatchOperationV2025OpV2025.Replace,
-                    path: "/campaign/searchCampaignInfo/accessConstraints",
+                    path: '/campaign/searchCampaignInfo/accessConstraints',
                     value: accessConstraints
                 }
             ]
@@ -945,13 +1109,13 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error updating existing Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(patchCampaignRequest, errorMessage)
-            logger.debug(error, "Failed Certification-Campaigns API request")
+            logger.debug(error, 'Failed Certification-Campaigns API request')
         }
         return errorMessage
     }
 
     async setCampaignSchedule(apiConfig: Configuration, campaignId: string, campaignSchedule: ScheduleV2025): Promise<string> {
-        let errorMessage = ""
+        let errorMessage = ''
         // Update the Campaign Schedule via API
         const certsApi = new CertificationCampaignsV2025Api(apiConfig)
         const setCampaignScheduleRequest: CertificationCampaignsV2025ApiSetCampaignTemplateScheduleRequest = {
@@ -963,7 +1127,7 @@ export class IscClient {
         } catch (error) {
             errorMessage = `Error setting campaign schedule using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
             logger.error(setCampaignScheduleRequest, errorMessage)
-            logger.debug(error, "Failed Certification-Campaigns API request")
+            logger.debug(error, 'Failed Certification-Campaigns API request')
         }
         return errorMessage
     }
@@ -977,9 +1141,9 @@ export class IscClient {
         let policyImpl = new PolicyImpl(policyConfig.policyName)
 
         // Create common variables
-        let errorMessage = ""
-        let policyId = ""
-        let policyQuery = ""
+        let errorMessage = ''
+        let policyId = ''
+        let policyQuery = ''
 
         // Create a new API Client for each policy in parallel mode to minimize 429 errors due to using the same access_token
         if (!apiConfig) {
@@ -1005,8 +1169,13 @@ export class IscClient {
 
         } else {
             // Find LeftHand & RightHand Entitlements using the Search API
-            const query1Entitlemnts = await this.searchEntitlementsByQuery(apiConfig, policyConfig.query1)
-            const query2Entitlemnts = await this.searchEntitlementsByQuery(apiConfig, policyConfig.query2)
+            let query1Entitlemnts = await this.searchEntitlementsByQuery(apiConfig, policyConfig.query1)
+            let query2Entitlemnts = await this.searchEntitlementsByQuery(apiConfig, policyConfig.query2)
+
+            if (this.resolveNestedEntitlements) {
+                query1Entitlemnts = await this.includeEntitlementHierarchy(apiConfig, query1Entitlemnts)
+                query2Entitlemnts = await this.includeEntitlementHierarchy(apiConfig, query2Entitlemnts)
+            }
 
             policyImpl.attributes.leftHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query1Entitlemnts))
             policyImpl.attributes.rightHandEntitlements = JSON.stringify(this.buildEntitlementNameArray(query2Entitlemnts))
@@ -1139,7 +1308,7 @@ export class IscClient {
             if (policyConfig.actions.includes(PolicyAction.CERTIFY) && !policyConfig.actions.includes(PolicyAction.DELETE_CAMPAIGN)) {
                 // Reset canProcess flag
                 canProcess = true
-                let campaignId = ""
+                let campaignId = ''
 
                 // Ensure the total number of access items did not exceed Identity Security Cloud limits
                 if (totalCount > this.maxAccessItemsPerCampaign) {
@@ -1213,7 +1382,7 @@ export class IscClient {
         if (policyConfig.actions.includes(PolicyAction.DELETE_CAMPAIGN) || policyConfig.actions.includes(PolicyAction.DELETE_ALL)) {
             // Reset canProcess flag
             canProcess = true
-            errorMessage = ""
+            errorMessage = ''
 
             // Ensure a proper certification campaign name has been provided
             if (!policyConfig.certificationName) {
@@ -1264,7 +1433,7 @@ export class IscClient {
     async testConnection(): Promise<any> {
         let sourceId = await this.getPolicyConfigSourceId()
         if (!sourceId) {
-            return "Unable to retrieve the Policy Configuration Source ID using the Provided Source Name"
+            return 'Unable to retrieve the Policy Configuration Source ID using the Provided Source Name'
         }
     }
 

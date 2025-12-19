@@ -59,7 +59,7 @@
 				{
 					"type": "section",
 					"sectionTitle": "Resolution",
-					"sectionHelpMessage": "Provide the default identity resolution parameters for policy owners and violations managers.",
+					"sectionHelpMessage": "Configure identity and access resolution parameters for policy owners, violations managers, and the entitlement heirarchy.",
 					"items": [
 						{
 							"key": "identityResolutionAttribute",
@@ -80,6 +80,12 @@
 									"value": "employeeNumber"
 								}
 							]
+						},
+						{
+							"key": "resolveNestedEntitlements",
+							"type": "checkbox",
+							"label": "Resolve Nested Entitlement Relations",
+							"required": true
 						}
 					]
 				},
