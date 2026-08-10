@@ -42,6 +42,15 @@ Individual:jane.doe|Governance Group:Finance Team
 
 Supported type prefixes (case-insensitive): `IDENTITY`, `INDIVIDUAL`, `Individual`, `GOVERNANCE_GROUP`, `GovernanceGroup`, `Governance Group`.
 
+## Example rows in SamplePolicies.csv
+
+| Row | PolicyName | Demonstrates |
+|-----|------------|--------------|
+| 1 | Accounting General vs. Invoicing | `Individual` owner type alias, `Level=HIGH`, single co-owner, `REPORT` + `CERTIFY` with schedules |
+| 2 | Accounts Payable vs. Accounts Receivable | `Level=MEDIUM`, `ViolationOwnerType=MANAGER`, no actions (definition-only row) |
+| 3 | Accounts Payable vs. Accounts Receivable - Weekly | `GOVERNANCE_GROUP` owner, `Level=CRITICAL`, pipe-delimited `CoOwners`, `REPORT` with `WEEKLY` schedule |
+| 4+ | Sample Policy N | Performance/load-test rows; `Query1` uses `tags:LEFT_TAG{N}`, `Query2` uses `tags:RIGHT_TAG{N}`; levels cycle `LOW`/`MEDIUM`/`HIGH`/`CRITICAL`; co-owners vary by policy number |
+
 ## Actions
 
 | Action | Behavior |
