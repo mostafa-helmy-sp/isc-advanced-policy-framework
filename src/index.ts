@@ -12,70 +12,67 @@ import {
     ConnectorError,
     StdTestConnectionInput,
 } from '@sailpoint/connector-sdk'
+import { Account } from './types/sailpoint-api'
+import { ConnectorConfig } from './config/connector-config'
 import { IscClient, PolicyType } from './isc-client'
-import { PolicyConfig } from './model/policy-config'
+import { PolicyConfig, toPolicyConfigAccount } from './model/policy-config'
 import { PolicyImpl } from './model/policy-impl'
 
+async function processPolicyConfigs(
+    policyConfigObjects: Account[],
+    iscClient: IscClient,
+    parallel: boolean,
+    res: Response<StdAccountListOutput>
+): Promise<void> {
+    if (parallel) {
+        logger.info('stdAccountList running in parallel mode')
+        const policyImpls: Promise<PolicyImpl>[] = []
+        for (const policyConfigObject of policyConfigObjects) {
+            const policyConfig = new PolicyConfig(toPolicyConfigAccount(policyConfigObject))
+            if (policyConfig.policyType === PolicyType.SOD) {
+                policyImpls.push(iscClient.processSodPolicyConfig(policyConfig))
+            }
+        }
+        for (const policyImpl of policyImpls) {
+            res.send(await policyImpl)
+        }
+    } else {
+        logger.info('stdAccountList running in serial mode')
+        for (const policyConfigObject of policyConfigObjects) {
+            const policyConfig = new PolicyConfig(toPolicyConfigAccount(policyConfigObject))
+            if (policyConfig.policyType === PolicyType.SOD) {
+                res.send(await iscClient.processSodPolicyConfig(policyConfig))
+            }
+        }
+    }
+}
+
 export const connector = async () => {
-
-    // Get connector source config
-    const config = await readConfig()
-
-    // Using SailPoint's TypeScript SDK to initialize the client
+    const config = (await readConfig()) as ConnectorConfig
     const iscClient = new IscClient(config)
 
     return createConnector()
-        .stdTestConnection(async (context: Context, input: StdTestConnectionInput, res: Response<StdTestConnectionOutput>) => {
+        .stdTestConnection(async (_context: Context, _input: StdTestConnectionInput, res: Response<StdTestConnectionOutput>) => {
             const response = await iscClient.testConnection()
             if (response) {
                 throw new ConnectorError(response)
-            } else {
-                logger.info(`Test Successful`)
-                res.send({})
             }
+            logger.info('Test Successful')
+            res.send({})
         })
-        .stdAccountList(async (context: Context, input: StdAccountListInput, res: Response<StdAccountListOutput>) => {
-            // Reading Policy Configurations from the Policy Configuration Source
+        .stdAccountList(async (_context: Context, _input: StdAccountListInput, res: Response<StdAccountListOutput>) => {
             const policyConfigs = await iscClient.getAllPolicyConfigs()
             logger.info(`stdAccountList found ${policyConfigs.length} policies to process`)
-            if (iscClient.isParallelProcessing()) {
-                logger.info(`stdAccountList running in parallel mode`)
-                // Loop Policy Configuration objects and start processing in parallel
-                const policyImpls: Promise<PolicyImpl>[] = []
-                for (const policyConfigObject of policyConfigs) {
-                    const policyConfig = new PolicyConfig(policyConfigObject)
-                    // Only Process SOD policies for now
-                    if (policyConfig.policyType === PolicyType.SOD) {
-                        policyImpls.push(iscClient.processSodPolicyConfig(policyConfig))
-                    }
-                }
-                // Await each promise before returning
-                for (const policyImpl of policyImpls) {
-                    res.send(await policyImpl)
-                }
-            } else {
-                logger.info(`stdAccountList running in serial mode`)
-                // Loop each Policy Configuration objects one by one in series
-                for (const policyConfigObject of policyConfigs) {
-                    const policyConfig = new PolicyConfig(policyConfigObject)
-                    // Only Process SOD policies for now
-                    if (policyConfig.policyType === PolicyType.SOD) {
-                        res.send(await iscClient.processSodPolicyConfig(policyConfig))
-                    }
-                }
-            }
+            await processPolicyConfigs(policyConfigs, iscClient, iscClient.isParallelProcessing(), res)
         })
-        .stdAccountRead(async (context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {
+        .stdAccountRead(async (_context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {
             logger.info(`stdAccountRead read account : ${input.identity}`)
             const account = await iscClient.getAccount(input.identity)
             if (account) {
                 res.send(account)
             } else {
                 logger.debug(`stdAccountRead could not find account : ${input.identity}`)
-                res.send({
-                    identity: input.identity,
-                    attributes: {}
-                })
+                res.send({ identity: input.identity, attributes: {} })
             }
         })
 }

@@ -13,17 +13,60 @@
 [contributors-url]:https://github.com/mostafa-helmy-sp/isc-advanced-policy-framework/graphs/contributors
 
 # ISC Advanced Policy Management Framework
-[Explore the docs »](https://developer.sailpoint.com/discuss/t/isc-advanced-policy-management-framework/53680)
 
-[New to the CoLab? Click here »](https://developer.sailpoint.com/discuss/t/about-the-sailpoint-developer-community-colab/11230)
+A SailPoint Identity Security Cloud connector that reads SOD policy definitions from a Generic CSV source and provisions policies, violation report schedules, and certification campaign templates.
 
-<!-- CONTRIBUTING -->
+[Explore the community discussion »](https://developer.sailpoint.com/discuss/t/isc-advanced-policy-management-framework/53680)
+
+## Overview
+
+Each row in the policy CSV source represents one SOD policy configuration. The connector:
+
+1. Reads policy rows from a Generic CSV source via the Accounts API
+2. Resolves entitlements, access profiles, and roles using the Search API
+3. Creates or updates SOD policies via the SOD Policies API
+4. Optionally schedules violation reports and certification campaigns
+
+See [Architecture](docs/ARCHITECTURE.md) for the full data flow.
+
+## Prerequisites
+
+- Node.js 18+
+- [SailPoint Connector CLI (`spcx`)](https://developer.sailpoint.com/discuss/t/about-the-sailpoint-developer-community-colab/11230)
+- ISC tenant with an OAuth client configured for the required API scopes (see [API Reference](docs/API.md))
+
+## Quick start
+
+```bash
+npm ci
+npm run build
+npm run pack-zip
+```
+
+Deploy the generated connector package to ISC and configure the source using `connector-spec.json`.
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/ARCHITECTURE.md) | Data flow, commands, module map |
+| [Configuration](docs/CONFIGURATION.md) | Source settings and defaults |
+| [Policy CSV](docs/POLICY-CSV.md) | CSV column reference and actions |
+| [API Reference](docs/API.md) | ISC APIs, OAuth scopes, validation checklist |
+| [CHANGELOG](CHANGELOG.md) | Release history |
+
+## Development
+
+```bash
+npm run typecheck   # TypeScript validation
+npm test            # Unit tests with coverage
+npm run build       # Bundle connector with ncc
+npm run dev         # Run locally with spcx
+```
+
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
-
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag `enhancement`.
-Don't forget to give the project a star! Thanks again!
+Contributions are welcome. Please fork the repo and open a pull request.
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
@@ -31,11 +74,10 @@ Don't forget to give the project a star! Thanks again!
 4. Push to the Branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-<!-- LICENSE -->
 ## License
 
 Distributed under the MIT License. See `LICENSE.txt` for more information.
 
-<!-- CONTACT -->
 ## Discuss
-[Click Here](https://developer.sailpoint.com/discuss/t/isc-advanced-policy-management-framework/53680) to discuss this tool with other users.
+
+[Community discussion thread](https://developer.sailpoint.com/discuss/t/isc-advanced-policy-management-framework/53680)

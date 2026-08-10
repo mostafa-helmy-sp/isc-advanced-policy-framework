@@ -59,7 +59,7 @@
 				{
 					"type": "section",
 					"sectionTitle": "Resolution",
-					"sectionHelpMessage": "Configure identity and access resolution parameters for policy owners, violations managers, and the entitlement heirarchy.",
+					"sectionHelpMessage": "Configure identity and access resolution parameters for policy owners, violations managers, and the entitlement hierarchy.",
 					"items": [
 						{
 							"key": "identityResolutionAttribute",
@@ -85,7 +85,7 @@
 							"key": "resolveNestedEntitlements",
 							"type": "checkbox",
 							"label": "Resolve Nested Entitlement Relations",
-							"required": true
+							"required": false
 						}
 					]
 				},
@@ -174,12 +174,12 @@
 			{
 				"name": "policyName",
 				"type": "string",
-				"description": "IdentityNow Policy name"
+				"description": "Identity Security Cloud policy name"
 			},
 			{
 				"name": "policyQuery",
 				"type": "string",
-				"description": "IdentityNow Policy detection query"
+				"description": "Identity Security Cloud policy detection query"
 			},
 			{
 				"name": "leftHandEntitlementCount",
@@ -210,6 +210,11 @@
 				"name": "campaignTemplateName",
 				"type": "string",
 				"description": "Name of the Policy Certification Campaign Template"
+			},
+			{
+				"name": "certificationName",
+				"type": "string",
+				"description": "Name of the certification campaign template"
 			},
 			{
 				"name": "policyDeleted",
@@ -244,7 +249,7 @@
 			{
 				"name": "errorMessages",
 				"type": "string",
-				"description": "And errors during policy or campaign configuration"
+				"description": "Any errors during policy or campaign configuration"
 			},
 			{
 				"name": "leftHandEntitlements",
