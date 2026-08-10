@@ -9,8 +9,10 @@ Policy definitions are stored as accounts in a Generic CSV source. See [`SampleP
 | `PolicyName` | Yes | Unique policy name (also used as connector account identity) |
 | `PolicyType` | Yes | Policy type; only `SOD` is processed today |
 | `PolicyDescription` | No | Policy description |
-| `PolicyOwnerType` | Yes | `IDENTITY` or `GOVERNANCE_GROUP` |
+| `PolicyOwnerType` | Yes | Individual or Governance Group: `IDENTITY`/`INDIVIDUAL`/`Individual`, or `GOVERNANCE_GROUP`/`GovernanceGroup` |
 | `PolicyOwner` | Yes | Owner identity attribute value or governance group name |
+| `Level` | No | Policy severity: `LOW`, `MEDIUM`, `HIGH`, or `CRITICAL` (defaults to `HIGH` if omitted) |
+| `CoOwners` | No | Pipe-delimited co-owner entries: `TYPE:value\|TYPE:value` (max 10). Empty clears co-owners on update. |
 | `PolicyEnabled` | Yes | `true`/`yes` or `false`/`no` — maps to ENFORCED / NOT_ENFORCED |
 | `ExternalReference` | No | External reference URL or ID |
 | `Tags` | No | Comma-separated policy tags |
@@ -18,7 +20,7 @@ Policy definitions are stored as accounts in a Generic CSV source. See [`SampleP
 | `Query1` | Yes | ISC search query for left-hand entitlements |
 | `Query2Name` | Yes | Display name for right-hand entitlement query |
 | `Query2` | Yes | ISC search query for right-hand entitlements |
-| `ViolationOwnerType` | Yes | `IDENTITY`, `GOVERNANCE_GROUP`, or `MANAGER` |
+| `ViolationOwnerType` | Yes | `IDENTITY`/`INDIVIDUAL`/`Individual`, `GOVERNANCE_GROUP`, or `MANAGER` |
 | `ViolationOwner` | Conditional | Required unless type is `MANAGER` |
 | `MitigatingControls` | No | Compensating controls text |
 | `CorrectionAdvice` | No | Correction advice text |
@@ -27,6 +29,18 @@ Policy definitions are stored as accounts in a Generic CSV source. See [`SampleP
 | `CertificationName` | Conditional | Campaign template name — required for `CERTIFY` or delete actions |
 | `CertificationDescription` | Conditional | Campaign description — required for `CERTIFY` |
 | `CertificationSchedule` | No | `WEEKLY` or `MONTHLY` campaign template schedule |
+
+## CoOwners format
+
+Co-owners are specified as pipe-delimited entries, each with a type prefix and value separated by a colon:
+
+```
+IDENTITY:mostafa.helmy
+IDENTITY:jane.doe|GOVERNANCE_GROUP:Accounting
+Individual:jane.doe|Governance Group:Finance Team
+```
+
+Supported type prefixes (case-insensitive): `IDENTITY`, `INDIVIDUAL`, `Individual`, `GOVERNANCE_GROUP`, `GovernanceGroup`, `Governance Group`.
 
 ## Actions
 

@@ -1,4 +1,5 @@
 import { Account } from '../types/sailpoint-api'
+import { normalizeOwnerType, normalizeViolationOwnerType } from '../utils/owner-parser'
 
 /** CSV account object from the policy configuration source. */
 export interface PolicyConfigAccount {
@@ -30,6 +31,10 @@ export class PolicyConfig {
     policyOwnerType: string
     /** CSV column: PolicyOwner — resolved via identity or workgroup search */
     policyOwner: string
+    /** CSV column: Level — LOW, MEDIUM, HIGH, or CRITICAL */
+    level: string
+    /** CSV column: CoOwners — pipe-delimited TYPE:value entries */
+    coOwners: string
     /** CSV column: PolicyEnabled — true, yes, false, or omitted */
     policyState: boolean
     /** CSV column: ExternalReference */
@@ -68,8 +73,10 @@ export class PolicyConfig {
         this.policyName = attrs.PolicyName ?? ''
         this.policyType = attrs.PolicyType ?? ''
         this.policyDescription = attrs.PolicyDescription
-        this.policyOwnerType = attrs.PolicyOwnerType ?? ''
+        this.policyOwnerType = normalizeOwnerType(attrs.PolicyOwnerType ?? '') ?? attrs.PolicyOwnerType ?? ''
         this.policyOwner = attrs.PolicyOwner ?? ''
+        this.level = attrs.Level ?? ''
+        this.coOwners = attrs.CoOwners ?? ''
         this.policyState = parsePolicyEnabled(attrs.PolicyEnabled)
         this.externalReference = attrs.ExternalReference
         this.tags = attrs.Tags ? attrs.Tags.split(',') : []
@@ -77,7 +84,7 @@ export class PolicyConfig {
         this.query2 = attrs.Query2 ?? ''
         this.query1Name = attrs.Query1Name ?? ''
         this.query2Name = attrs.Query2Name ?? ''
-        this.violationOwnerType = attrs.ViolationOwnerType ?? ''
+        this.violationOwnerType = normalizeViolationOwnerType(attrs.ViolationOwnerType ?? '')
         this.violationOwner = attrs.ViolationOwner ?? ''
         this.mitigatingControls = attrs.MitigatingControls ?? ''
         this.correctionAdvice = attrs.CorrectionAdvice ?? ''

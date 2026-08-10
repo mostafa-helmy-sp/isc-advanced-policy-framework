@@ -1,6 +1,6 @@
 # API Reference
 
-This connector uses the SailPoint TypeScript SDK (`sailpoint-api-client` 2.x) with per-service v1 APIs.
+This connector uses the SailPoint TypeScript SDK (`sailpoint-api-client` 2.1.16+) with per-service v1 APIs.
 
 ## APIs used
 
@@ -12,6 +12,15 @@ This connector uses the SailPoint TypeScript SDK (`sailpoint-api-client` 2.x) wi
 | Entitlements | `EntitlementsApi` | `listEntitlementChildrenV1`, `listEntitlementParentsV1` |
 | Governance Groups | `GovernanceGroupsApi` | `listWorkgroupsV1`, `listWorkgroupMembersV1` |
 | SOD Policies | `SODPoliciesApi` | `listSodPoliciesV1`, `createSodPolicyV1`, `patchSodPolicyV1`, `deleteSodPolicyV1`, `putPolicyScheduleV1` |
+
+SOD policy create/update payloads include:
+
+| Field | CSV source | SDK field |
+|-------|------------|-----------|
+| Policy owner | `PolicyOwnerType` + `PolicyOwner` | `ownerRef` |
+| Co-owners | `CoOwners` (pipe-delimited) | `secondaryOwnerRefs` (max 10) |
+| Severity level | `Level` | `level` (`LOW`, `MEDIUM`, `HIGH`, `CRITICAL`) |
+
 | Certification Campaigns | `CertificationCampaignsApi` | `getCampaignTemplatesV1`, `createCampaignTemplateV1`, `patchCampaignTemplateV1`, `deleteCampaignTemplateV1`, `setCampaignTemplateScheduleV1` |
 
 ## Recommended OAuth scopes

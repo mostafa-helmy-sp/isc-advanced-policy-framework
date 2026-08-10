@@ -1,6 +1,6 @@
 {
   "name": "advanced-policy-framework",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "main": "dist/index.js",
   "engines": {
     "node": ">=18"
@@ -21,7 +21,7 @@
   "dependencies": {
     "@sailpoint/connector-sdk": "^1.2.7",
     "axios-retry": "^3.9.1",
-    "sailpoint-api-client": "^2.0.0"
+    "sailpoint-api-client": "^2.1.16"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",

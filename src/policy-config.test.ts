@@ -42,6 +42,30 @@ describe('PolicyConfig', () => {
         expect(config.actions).toEqual(['REPORT', 'CERTIFY'])
         expect(config.tags).toEqual([])
     })
+
+    it('reads Level and CoOwners and normalizes owner types', () => {
+        const config = new PolicyConfig({
+            attributes: {
+                PolicyName: 'Test Policy',
+                PolicyType: 'SOD',
+                PolicyOwnerType: 'Individual',
+                PolicyOwner: 'owner',
+                Level: 'CRITICAL',
+                CoOwners: 'IDENTITY:coowner|GOVERNANCE_GROUP:Accounting',
+                Query1Name: 'Left',
+                Query1: 'q1',
+                Query2Name: 'Right',
+                Query2: 'q2',
+                ViolationOwnerType: 'Individual',
+                ViolationOwner: 'vmanager',
+            },
+        })
+
+        expect(config.policyOwnerType).toBe('IDENTITY')
+        expect(config.level).toBe('CRITICAL')
+        expect(config.coOwners).toBe('IDENTITY:coowner|GOVERNANCE_GROUP:Accounting')
+        expect(config.violationOwnerType).toBe('IDENTITY')
+    })
 })
 
 describe('schedule builders', () => {

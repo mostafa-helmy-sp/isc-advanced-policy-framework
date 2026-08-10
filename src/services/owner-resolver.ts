@@ -2,12 +2,19 @@ import {
     Configuration,
     GovernanceGroupsApi,
     Paginator,
+    SodPolicySecondaryOwnerRefsInner,
 } from '../types/sailpoint-api'
 import { PolicyConfig } from '../model/policy-config'
 import { DtoType } from '../types/enums'
 import { OwnerReference } from '../types/search-documents'
+import { parseCoOwnerEntries } from '../utils/owner-parser'
 import { wrapApiCall } from '../utils/api-helper'
 import { SearchService } from './search-service'
+
+export interface ResolveCoOwnersResult {
+    refs: SodPolicySecondaryOwnerRefsInner[]
+    errors: string[]
+}
 
 export class OwnerResolverService {
     constructor(
@@ -16,31 +23,33 @@ export class OwnerResolverService {
     ) {}
 
     async resolvePolicyOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<OwnerReference | undefined> {
-        if (policyConfig.policyOwnerType === DtoType.Identity) {
-            return this.searchService.searchIdentityByAttribute(
-                apiConfig,
-                this.identityResolutionAttribute,
-                policyConfig.policyOwner
-            )
-        }
-        if (policyConfig.policyOwnerType === DtoType.GovernanceGroup) {
-            return this.searchGovGroupByName(apiConfig, policyConfig.policyOwner)
-        }
-        return undefined
+        return this.resolveOwnerReference(apiConfig, policyConfig.policyOwnerType, policyConfig.policyOwner)
     }
 
     async resolveViolationOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<OwnerReference | undefined> {
-        if (policyConfig.violationOwnerType === DtoType.Identity && policyConfig.violationOwner) {
-            return this.searchService.searchIdentityByAttribute(
-                apiConfig,
-                this.identityResolutionAttribute,
-                policyConfig.violationOwner
-            )
+        if (policyConfig.violationOwnerType === DtoType.Manager) {
+            return undefined
         }
-        if (policyConfig.violationOwnerType === DtoType.GovernanceGroup && policyConfig.violationOwner) {
-            return this.searchGovGroupByName(apiConfig, policyConfig.violationOwner)
+        if (!policyConfig.violationOwner) {
+            return undefined
         }
-        return undefined
+        return this.resolveOwnerReference(apiConfig, policyConfig.violationOwnerType, policyConfig.violationOwner)
+    }
+
+    async resolveCoOwners(apiConfig: Configuration, coOwnersRaw: string): Promise<ResolveCoOwnersResult> {
+        const { entries, errors } = parseCoOwnerEntries(coOwnersRaw)
+        const refs: SodPolicySecondaryOwnerRefsInner[] = []
+
+        for (const entry of entries) {
+            const resolved = await this.resolveOwnerReference(apiConfig, entry.type, entry.value)
+            if (!resolved) {
+                errors.push(`Unable to resolve Co-Owner. Type: ${entry.type}, Value: ${entry.value}`)
+                continue
+            }
+            refs.push(resolved as SodPolicySecondaryOwnerRefsInner)
+        }
+
+        return { refs, errors }
     }
 
     async resolvePolicyRecipients(
@@ -65,6 +74,20 @@ export class OwnerResolverService {
             recipients = [policyOwner]
         }
         return recipients
+    }
+
+    private async resolveOwnerReference(
+        apiConfig: Configuration,
+        ownerType: string,
+        ownerValue: string
+    ): Promise<OwnerReference | undefined> {
+        if (ownerType === DtoType.Identity) {
+            return this.searchService.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, ownerValue)
+        }
+        if (ownerType === DtoType.GovernanceGroup) {
+            return this.searchGovGroupByName(apiConfig, ownerValue)
+        }
+        return undefined
     }
 
     private async searchGovGroupByName(apiConfig: Configuration, govGroupName: string): Promise<OwnerReference | undefined> {

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.14.0 - 2026-08-10
+
+### Added
+- CSV support for policy `Level` (LOW, MEDIUM, HIGH, CRITICAL) mapped to the SOD Policies API `level` field.
+- CSV support for `CoOwners` as pipe-delimited `TYPE:value` entries mapped to `secondaryOwnerRefs` (max 10).
+- Owner type aliases: `Individual` / `INDIVIDUAL` normalize to `IDENTITY`; governance group variants normalize to `GOVERNANCE_GROUP`.
+
+### Changed
+- Upgraded `sailpoint-api-client` to `^2.1.16` (required for `level` and `secondaryOwnerRefs` on SOD policies).
+- Refactored owner resolution into shared lookup used by policy owner, violation owner, and co-owners.
+
 ## 0.13.0 - 2026-08-10
 
 ### Changed

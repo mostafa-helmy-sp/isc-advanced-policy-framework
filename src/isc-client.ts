@@ -24,6 +24,7 @@ import { SearchService } from './services/search-service'
 import { SodPolicyService } from './services/sod-policy-service'
 import { PolicyAction, PolicyType } from './types/enums'
 import { buildEntitlementNameArray, buildNameArray } from './utils/api-helper'
+import { parsePolicyLevel } from './utils/owner-parser'
 
 export { PolicyAction, PolicyType } from './types/enums'
 
@@ -195,7 +196,19 @@ export class IscClient {
             )
         }
 
-        if (!canProcess || !policyOwner) {
+        const levelResult = parsePolicyLevel(policyConfig.level)
+        if (levelResult.error) {
+            canProcess = false
+            errorMessages.push(levelResult.error)
+        }
+
+        const coOwnerResult = await this.ownerResolver.resolveCoOwners(apiConfig, policyConfig.coOwners)
+        if (coOwnerResult.errors.length > 0) {
+            canProcess = false
+            errorMessages.push(...coOwnerResult.errors)
+        }
+
+        if (!canProcess || !policyOwner || !levelResult.level) {
             return false
         }
 
@@ -214,7 +227,9 @@ export class IscClient {
                 policyConfig,
                 policyOwner as SodPolicyOwnerRef,
                 violationOwnerAssignmentConfig,
-                conflictingAccessCriteria
+                conflictingAccessCriteria,
+                levelResult.level,
+                coOwnerResult.refs
             )
             policyId = existingPolicy.id
         } else {
@@ -223,7 +238,9 @@ export class IscClient {
                 policyConfig,
                 policyOwner as SodPolicyOwnerRef,
                 violationOwnerAssignmentConfig,
-                conflictingAccessCriteria
+                conflictingAccessCriteria,
+                levelResult.level,
+                coOwnerResult.refs
             )
         }
 

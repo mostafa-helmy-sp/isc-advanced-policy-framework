@@ -4,7 +4,9 @@ import {
     Schedule,
     SodPolicy,
     SodPolicyConflictingAccessCriteria,
+    SodPolicyLevelEnum,
     SodPolicyOwnerRef,
+    SodPolicySecondaryOwnerRefsInner,
     SodPolicyStateEnum,
     SodPolicyTypeEnum,
     SodRecipient,
@@ -47,7 +49,9 @@ export class SodPolicyService {
         policyConfig: PolicyConfig,
         policyOwner: SodPolicyOwnerRef,
         violationOwner: ViolationOwnerAssignmentConfig,
-        conflictingAccessCriteria: SodPolicyConflictingAccessCriteria
+        conflictingAccessCriteria: SodPolicyConflictingAccessCriteria,
+        level: SodPolicyLevelEnum,
+        secondaryOwnerRefs: SodPolicySecondaryOwnerRefsInner[]
     ): Promise<[errorMessage: string, policyId: string, policyQuery: string]> {
         const policyApi = new SODPoliciesApi(apiConfig)
         const policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
@@ -56,6 +60,8 @@ export class SodPolicyService {
                 name: policyConfig.policyName,
                 description: policyConfig.policyDescription,
                 ownerRef: policyOwner,
+                secondaryOwnerRefs,
+                level,
                 externalPolicyReference: policyConfig.externalReference,
                 compensatingControls: policyConfig.mitigatingControls,
                 correctionAdvice: policyConfig.correctionAdvice,
@@ -82,7 +88,9 @@ export class SodPolicyService {
         policyConfig: PolicyConfig,
         policyOwner: SodPolicyOwnerRef,
         violationOwner: ViolationOwnerAssignmentConfig,
-        conflictingAccessCriteria: SodPolicyConflictingAccessCriteria
+        conflictingAccessCriteria: SodPolicyConflictingAccessCriteria,
+        level: SodPolicyLevelEnum,
+        secondaryOwnerRefs: SodPolicySecondaryOwnerRefsInner[]
     ): Promise<[errorMessage: string, policyQuery: string]> {
         const policyApi = new SODPoliciesApi(apiConfig)
         const policyState = policyConfig.policyState ? SodPolicyStateEnum.Enforced : SodPolicyStateEnum.NotEnforced
@@ -92,6 +100,8 @@ export class SodPolicyService {
                 { op: JsonPatchOperationOpEnum.Replace, path: '/name', value: policyConfig.policyName },
                 { op: JsonPatchOperationOpEnum.Replace, path: '/description', value: policyConfig.policyDescription },
                 { op: JsonPatchOperationOpEnum.Replace, path: '/ownerRef', value: policyOwner },
+                { op: JsonPatchOperationOpEnum.Replace, path: '/secondaryOwnerRefs', value: secondaryOwnerRefs },
+                { op: JsonPatchOperationOpEnum.Replace, path: '/level', value: level },
                 { op: JsonPatchOperationOpEnum.Replace, path: '/externalPolicyReference', value: policyConfig.externalReference },
                 { op: JsonPatchOperationOpEnum.Replace, path: '/compensatingControls', value: policyConfig.mitigatingControls },
                 { op: JsonPatchOperationOpEnum.Replace, path: '/correctionAdvice', value: policyConfig.correctionAdvice },

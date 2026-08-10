@@ -42,6 +42,7 @@ export type {
     SodPolicy,
     SodPolicyConflictingAccessCriteria,
     SodPolicyOwnerRef,
+    SodPolicySecondaryOwnerRefsInner,
     SodRecipient,
     ViolationOwnerAssignmentConfig,
 } from 'sailpoint-api-client/dist/sod_policies/api'
@@ -50,6 +51,7 @@ export {
     JsonPatchOperationOpEnum,
     ScheduleType,
     SelectorType,
+    SodPolicyLevelEnum,
     SodPolicyStateEnum,
     SodPolicyTypeEnum,
     ViolationOwnerAssignmentConfigAssignmentRuleEnum,
