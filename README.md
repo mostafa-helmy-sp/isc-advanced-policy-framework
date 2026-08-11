@@ -4,7 +4,7 @@
 [![Contributor Shield][contributor-shield]][contributors-url]
 
 [discourse-shield]:https://img.shields.io/discourse/topics?label=Discuss%20This%20Tool&server=https%3A%2F%2Fdeveloper.sailpoint.com%2Fdiscuss
-[discourse-url]:https://developer.sailpoint.com/discuss
+[discourse-url]:https://developer.sailpoint.com/discuss/t/identity-security-cloud-advanced-policy-management-framework/13792
 [issues-shield]:https://img.shields.io/github/issues/mostafa-helmy-sp/isc-advanced-policy-framework?label=Issues
 [issues-url]:https://github.com/mostafa-helmy-sp/isc-advanced-policy-framework/issues
 [release-shield]: https://img.shields.io/github/v/release/mostafa-helmy-sp/isc-advanced-policy-framework?label=Current%20Release
@@ -16,7 +16,7 @@
 
 A SailPoint Identity Security Cloud connector that reads SOD policy definitions from a Generic CSV source and provisions policies, violation report schedules, and certification campaign templates.
 
-[Explore the community discussion »](https://developer.sailpoint.com/discuss/t/isc-advanced-policy-management-framework/53680)
+[Explore the community discussion »](https://developer.sailpoint.com/discuss/t/identity-security-cloud-advanced-policy-management-framework/13792)
 
 ## Overview
 
@@ -80,4 +80,4 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 
 ## Discuss
 
-[Community discussion thread](https://developer.sailpoint.com/discuss/t/isc-advanced-policy-management-framework/53680)
+[Community discussion thread](https://developer.sailpoint.com/discuss/t/identity-security-cloud-advanced-policy-management-framework/13792)
