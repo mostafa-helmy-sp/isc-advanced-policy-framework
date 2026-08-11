@@ -17,3 +17,6 @@ node_modules/
 # Compiled source
 dist/
 coverage/
+
+# Packaged connector artifacts (publish via GitHub Releases)
+*.zip

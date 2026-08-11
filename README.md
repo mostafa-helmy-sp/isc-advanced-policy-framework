@@ -37,13 +37,17 @@ See [Architecture](docs/ARCHITECTURE.md) for the full data flow.
 
 ## Quick start
 
+**Pre-built:** download `advanced-policy-framework-1.0.0.zip` from [Releases](https://github.com/mostafa-helmy-sp/isc-advanced-policy-framework/releases) and upload it when creating the SaaS connector in your ISC org.
+
+**Build yourself:**
+
 ```bash
 npm ci
 npm run build
 npm run pack-zip
 ```
 
-Deploy the generated connector package to ISC and configure the source using `connector-spec.json`.
+The package is written to `dist/advanced-policy-framework-<version>.zip`. Deploy it to ISC and configure the source using `connector-spec.json`.
 
 ## Documentation
 
