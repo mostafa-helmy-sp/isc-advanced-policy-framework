@@ -3,6 +3,7 @@ import {
     DEFAULT_HOURLY_SCHEDULE_DAY,
     DEFAULT_IDENTITY_RESOLUTION_ATTRIBUTE,
     DEFAULT_MAX_ACCESS_ITEMS_PER_CAMPAIGN,
+    DEFAULT_MAX_CONCURRENT_POLICIES,
     DEFAULT_MAX_ENTITLEMENTS_PER_POLICY_SIDE,
     DEFAULT_MONTHLY_SCHEDULE_DAY,
     DEFAULT_WEEKLY_SCHEDULE_DAY,
@@ -25,6 +26,7 @@ export interface ConnectorConfig {
     maxEntitlementsPerPolicySide?: number
     maxAccessItemsPerCampaign?: number
     parallelProcessing?: boolean
+    maxConcurrentPolicies?: number
     resolveNestedEntitlements?: boolean
 }
 
@@ -39,6 +41,7 @@ export interface ResolvedConnectorSettings {
     maxEntitlementsPerPolicySide: number
     maxAccessItemsPerCampaign: number
     parallelProcessing: boolean
+    maxConcurrentPolicies: number
     resolveNestedEntitlements: boolean
 }
 
@@ -53,6 +56,7 @@ export function resolveConnectorSettings(config: ConnectorConfig): ResolvedConne
         maxEntitlementsPerPolicySide: config.maxEntitlementsPerPolicySide || DEFAULT_MAX_ENTITLEMENTS_PER_POLICY_SIDE,
         maxAccessItemsPerCampaign: config.maxAccessItemsPerCampaign || DEFAULT_MAX_ACCESS_ITEMS_PER_CAMPAIGN,
         parallelProcessing: config.parallelProcessing || false,
+        maxConcurrentPolicies: config.maxConcurrentPolicies || DEFAULT_MAX_CONCURRENT_POLICIES,
         resolveNestedEntitlements: config.resolveNestedEntitlements || false,
     }
 }

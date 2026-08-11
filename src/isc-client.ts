@@ -59,6 +59,10 @@ export class IscClient {
         return this.settings.parallelProcessing
     }
 
+    getMaxConcurrentPolicies(): number {
+        return this.settings.maxConcurrentPolicies
+    }
+
     /** Returns all policy configuration rows from the CSV source. */
     async getAllPolicyConfigs() {
         return this.policyConfigSource.getAllPolicyConfigs()
@@ -146,12 +150,16 @@ export class IscClient {
         errorMessages: string[]
     ): Promise<boolean> {
         let canProcess = true
-        let query1Entitlements = await this.searchService.searchEntitlementsByQuery(apiConfig, policyConfig.query1)
-        let query2Entitlements = await this.searchService.searchEntitlementsByQuery(apiConfig, policyConfig.query2)
+        let [query1Entitlements, query2Entitlements] = await Promise.all([
+            this.searchService.searchEntitlementsByQuery(apiConfig, policyConfig.query1),
+            this.searchService.searchEntitlementsByQuery(apiConfig, policyConfig.query2),
+        ])
 
         if (this.settings.resolveNestedEntitlements) {
-            query1Entitlements = await this.entitlementHierarchyService.includeEntitlementHierarchy(apiConfig, query1Entitlements)
-            query2Entitlements = await this.entitlementHierarchyService.includeEntitlementHierarchy(apiConfig, query2Entitlements)
+            ;[query1Entitlements, query2Entitlements] = await Promise.all([
+                this.entitlementHierarchyService.includeEntitlementHierarchy(apiConfig, query1Entitlements),
+                this.entitlementHierarchyService.includeEntitlementHierarchy(apiConfig, query2Entitlements),
+            ])
         }
 
         policyImpl.attributes.leftHandEntitlements = JSON.stringify(buildEntitlementNameArray(query1Entitlements))
@@ -180,7 +188,10 @@ export class IscClient {
             )
         }
 
-        const policyOwner = await this.ownerResolver.resolvePolicyOwner(apiConfig, policyConfig)
+        const [policyOwner, violationOwner] = await Promise.all([
+            this.ownerResolver.resolvePolicyOwner(apiConfig, policyConfig),
+            this.ownerResolver.resolveViolationOwner(apiConfig, policyConfig),
+        ])
         if (!policyOwner) {
             canProcess = false
             errorMessages.push(
@@ -188,7 +199,6 @@ export class IscClient {
             )
         }
 
-        const violationOwner = await this.ownerResolver.resolveViolationOwner(apiConfig, policyConfig)
         if (!violationOwner && policyConfig.violationOwnerType !== ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
             canProcess = false
             errorMessages.push(
@@ -291,18 +301,14 @@ export class IscClient {
             }
         }
 
-        const query1AccessProfiles = await this.searchService.searchAccessProfilesByEntitlements(apiConfig, query1Entitlements)
-        const query2AccessProfiles = await this.searchService.searchAccessProfilesByEntitlements(apiConfig, query2Entitlements)
-        const query1Roles = await this.searchService.searchRolesByAccessProfilesOrEntitlements(
-            apiConfig,
-            query1Entitlements,
-            query1AccessProfiles
-        )
-        const query2Roles = await this.searchService.searchRolesByAccessProfilesOrEntitlements(
-            apiConfig,
-            query2Entitlements,
-            query2AccessProfiles
-        )
+        const [query1AccessProfiles, query2AccessProfiles] = await Promise.all([
+            this.searchService.searchAccessProfilesByEntitlements(apiConfig, query1Entitlements),
+            this.searchService.searchAccessProfilesByEntitlements(apiConfig, query2Entitlements),
+        ])
+        const [query1Roles, query2Roles] = await Promise.all([
+            this.searchService.searchRolesByAccessProfilesOrEntitlements(apiConfig, query1Entitlements, query1AccessProfiles),
+            this.searchService.searchRolesByAccessProfilesOrEntitlements(apiConfig, query2Entitlements, query2AccessProfiles),
+        ])
 
         policyImpl.attributes.leftHandAccessProfiles = JSON.stringify(buildNameArray(query1AccessProfiles))
         policyImpl.attributes.rightHandAccessProfiles = JSON.stringify(buildNameArray(query2AccessProfiles))

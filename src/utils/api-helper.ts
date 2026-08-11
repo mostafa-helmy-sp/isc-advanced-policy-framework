@@ -33,6 +33,39 @@ export function mergeUnique<T>(items1: T[], items2: T[]): T[] {
     return [...new Set([...items1, ...items2])]
 }
 
+export function chunkArray<T>(items: T[], size: number): T[][] {
+    if (size <= 0 || items.length === 0) {
+        return items.length === 0 ? [] : [items]
+    }
+
+    const chunks: T[][] = []
+    for (let index = 0; index < items.length; index += size) {
+        chunks.push(items.slice(index, index + size))
+    }
+    return chunks
+}
+
+export function buildBatchedIdQueries(
+    ids: string[],
+    batchSize: number,
+    itemPrefix: string,
+    joiner: string,
+    prefix?: string,
+    suffix?: string
+): string[] {
+    if (ids.length === 0) {
+        return []
+    }
+    if (ids.length <= batchSize) {
+        return [buildIdQuery(ids, itemPrefix, joiner, prefix, suffix)]
+    }
+    return chunkArray(ids, batchSize).map((batch) => buildIdQuery(batch, itemPrefix, joiner, prefix, suffix))
+}
+
+export function deduplicateById<T extends { id?: string }>(items: T[]): T[] {
+    return [...new Map(items.filter((item) => item.id).map((item) => [item.id, item])).values()]
+}
+
 export function buildIdArray(items: Array<{ id?: string }>): string[] {
     return items.map((item) => item.id).filter((id): id is string => !!id)
 }

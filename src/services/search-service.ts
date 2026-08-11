@@ -1,4 +1,5 @@
 import { Configuration, Paginator, Search, SearchApi, SearchIndex } from '../types/sailpoint-api'
+import { SEARCH_QUERY_BATCH_SIZE } from '../config/defaults'
 import { DtoType } from '../types/enums'
 import {
     AccessProfileDocument,
@@ -7,37 +8,54 @@ import {
     OwnerReference,
     RoleDocument,
 } from '../types/search-documents'
-import { buildIdQueryFromItems, wrapApiCall } from '../utils/api-helper'
+import { buildBatchedIdQueries, buildIdArray, deduplicateById, wrapApiCall } from '../utils/api-helper'
 
 export class SearchService {
     async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<EntitlementDocument[]> {
-        const search = this.buildSearch(SearchIndex.Entitlements, query, [
-            'id',
-            'name',
-            'schema',
-            'type',
-            'source.name',
-            'source.id',
-        ])
+        const search = this.buildSearch(SearchIndex.Entitlements, query, this.entitlementIncludes())
         const result = await this.runSearch<EntitlementDocument>(apiConfig, search, 'Error finding entitlements using Search API')
         return result ?? []
+    }
+
+    async searchEntitlementsByIds(apiConfig: Configuration, ids: string[]): Promise<EntitlementDocument[]> {
+        if (ids.length === 0) {
+            return []
+        }
+
+        const queries = buildBatchedIdQueries(ids, SEARCH_QUERY_BATCH_SIZE, 'id:', ' OR ')
+        return this.runBatchedQueries<EntitlementDocument>(
+            apiConfig,
+            queries,
+            SearchIndex.Entitlements,
+            this.entitlementIncludes(),
+            'Error finding entitlements using Search API'
+        )
     }
 
     async searchAccessProfilesByEntitlements(
         apiConfig: Configuration,
         entitlements: EntitlementDocument[]
     ): Promise<AccessProfileDocument[]> {
-        if (entitlements.length === 0) {
+        const entitlementIds = buildIdArray(entitlements)
+        if (entitlementIds.length === 0) {
             return []
         }
-        const query = buildIdQueryFromItems(entitlements, 'id:', ' OR ', '@entitlements(', ')')
-        const search = this.buildSearch(SearchIndex.Accessprofiles, query, ['id', 'name', 'type', 'source.name'])
-        const result = await this.runSearch<AccessProfileDocument>(
+
+        const queries = buildBatchedIdQueries(
+            entitlementIds,
+            SEARCH_QUERY_BATCH_SIZE,
+            'id:',
+            ' OR ',
+            '@entitlements(',
+            ')'
+        )
+        return this.runBatchedQueries<AccessProfileDocument>(
             apiConfig,
-            search,
+            queries,
+            SearchIndex.Accessprofiles,
+            ['id', 'name', 'type', 'source.name'],
             'Error finding access profiles using Search API'
         )
-        return result ?? []
     }
 
     async searchRolesByAccessProfilesOrEntitlements(
@@ -45,21 +63,36 @@ export class SearchService {
         entitlements: EntitlementDocument[],
         accessProfiles: AccessProfileDocument[]
     ): Promise<RoleDocument[]> {
-        let query: string | undefined
-        if (entitlements.length > 0) {
-            query = buildIdQueryFromItems(entitlements, 'id:', ' OR ', '@entitlements(', ')')
+        const entitlementIds = buildIdArray(entitlements)
+        const accessProfileIds = buildIdArray(accessProfiles)
+        const queries: string[] = []
+
+        if (entitlementIds.length > 0) {
+            queries.push(
+                ...buildBatchedIdQueries(
+                    entitlementIds,
+                    SEARCH_QUERY_BATCH_SIZE,
+                    'id:',
+                    ' OR ',
+                    '@entitlements(',
+                    ')'
+                )
+            )
         }
-        if (accessProfiles.length > 0) {
-            const accessProfileQuery = buildIdQueryFromItems(accessProfiles, 'accessProfiles.id:', ' OR ')
-            query = query ? query + buildIdQueryFromItems(accessProfiles, 'accessProfiles.id:', ' OR ', ' OR ') : accessProfileQuery
+        if (accessProfileIds.length > 0) {
+            queries.push(...buildBatchedIdQueries(accessProfileIds, SEARCH_QUERY_BATCH_SIZE, 'accessProfiles.id:', ' OR '))
         }
-        if (!query) {
+        if (queries.length === 0) {
             return []
         }
 
-        const search = this.buildSearch(SearchIndex.Roles, query, ['id', 'name', 'type'])
-        const result = await this.runSearch<RoleDocument>(apiConfig, search, 'Error finding roles using Search API')
-        return result ?? []
+        return this.runBatchedQueries<RoleDocument>(
+            apiConfig,
+            queries,
+            SearchIndex.Roles,
+            ['id', 'name', 'type'],
+            'Error finding roles using Search API'
+        )
     }
 
     async searchIdentityByAttribute(
@@ -83,6 +116,10 @@ export class SearchService {
         return { id: identity.id, name: identity.name, type: DtoType.Identity }
     }
 
+    private entitlementIncludes(): string[] {
+        return ['id', 'name', 'schema', 'type', 'source.name', 'source.id']
+    }
+
     private buildSearch(index: (typeof SearchIndex)[keyof typeof SearchIndex], query: string, includes: string[]): Search {
         return {
             indices: [index],
@@ -90,6 +127,22 @@ export class SearchService {
             queryResultFilter: { includes },
             sort: ['id'],
         }
+    }
+
+    private async runBatchedQueries<T extends { id?: string }>(
+        apiConfig: Configuration,
+        queries: string[],
+        index: (typeof SearchIndex)[keyof typeof SearchIndex],
+        includes: string[],
+        errorContext: string
+    ): Promise<T[]> {
+        const batchResults = await Promise.all(
+            queries.map((query) => {
+                const search = this.buildSearch(index, query, includes)
+                return this.runSearch<T>(apiConfig, search, errorContext)
+            })
+        )
+        return deduplicateById(batchResults.flatMap((result) => result ?? []))
     }
 
     private async runSearch<T>(apiConfig: Configuration, search: Search, errorContext: string): Promise<T[] | undefined> {

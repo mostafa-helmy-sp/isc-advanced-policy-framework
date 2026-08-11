@@ -23,6 +23,7 @@ All settings are defined in [`connector-spec.json`](../connector-spec.json) and 
 | `maxEntitlementsPerPolicySide` | `400` | Max entitlements per policy query side |
 | `maxAccessItemsPerCampaign` | `10000` | Max total access items in a certification campaign |
 | `parallelProcessing` | `false` | Process policies concurrently with separate API clients |
+| `maxConcurrentPolicies` | `10` | Max policies processed simultaneously when parallel processing is enabled |
 | `resolveNestedEntitlements` | `false` | Expand entitlement queries to include hierarchy members |
 
 ## Rate limiting

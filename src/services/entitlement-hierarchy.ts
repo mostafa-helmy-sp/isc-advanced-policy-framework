@@ -7,7 +7,7 @@ import {
 } from '../types/sailpoint-api'
 import { EntitlementHierarchy } from '../types/enums'
 import { EntitlementDocument } from '../types/search-documents'
-import { buildIdArray, buildIdQuery, wrapApiCall } from '../utils/api-helper'
+import { buildIdArray, wrapApiCall } from '../utils/api-helper'
 import { SearchService } from './search-service'
 
 export class EntitlementHierarchyService {
@@ -47,8 +47,7 @@ export class EntitlementHierarchyService {
             return [entitlement]
         }
 
-        const query = buildIdQuery(entitlementIds, 'id:', ' OR ')
-        const nested = await this.searchService.searchEntitlementsByQuery(apiConfig, query)
+        const nested = await this.searchService.searchEntitlementsByIds(apiConfig, entitlementIds)
         return [entitlement, ...nested]
     }
 

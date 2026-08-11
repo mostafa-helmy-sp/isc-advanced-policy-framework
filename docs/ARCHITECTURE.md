@@ -36,7 +36,17 @@ Generic CSV Source (policy rows as accounts)
 
 ## Parallel processing
 
-When `parallelProcessing` is enabled, each policy receives its own SDK `Configuration` instance to reduce OAuth token contention and 429 rate-limit errors during large batch runs.
+When `parallelProcessing` is enabled, policies are processed concurrently up to `maxConcurrentPolicies` (default 10). Each active policy receives its own SDK `Configuration` instance to reduce OAuth token contention and 429 rate-limit errors during large batch runs.
+
+Within each policy, independent API calls (entitlement queries, owner resolution, access profile and role searches) run in parallel where safe.
+
+## Caching
+
+`OwnerResolverService` maintains a session-scoped cache for owner and governance-group member lookups for the duration of an aggregation run. This avoids repeated API calls when many policies share the same owners.
+
+## Search query batching
+
+Large entitlement or access profile ID lists are split into batches of 50 IDs per Search API query. Results are merged and deduplicated before use in policy or campaign configuration.
 
 ## Module map
 

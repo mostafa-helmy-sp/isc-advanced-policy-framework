@@ -17,10 +17,18 @@ export interface ResolveCoOwnersResult {
 }
 
 export class OwnerResolverService {
+    private readonly ownerCache = new Map<string, OwnerReference | undefined>()
+    private readonly govGroupMembersCache = new Map<string, OwnerReference[]>()
+
     constructor(
         private readonly searchService: SearchService,
         private readonly identityResolutionAttribute: string
     ) {}
+
+    clearCaches(): void {
+        this.ownerCache.clear()
+        this.govGroupMembersCache.clear()
+    }
 
     async resolvePolicyOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<OwnerReference | undefined> {
         return this.resolveOwnerReference(apiConfig, policyConfig.policyOwnerType, policyConfig.policyOwner)
@@ -38,10 +46,15 @@ export class OwnerResolverService {
 
     async resolveCoOwners(apiConfig: Configuration, coOwnersRaw: string): Promise<ResolveCoOwnersResult> {
         const { entries, errors } = parseCoOwnerEntries(coOwnersRaw)
-        const refs: SodPolicySecondaryOwnerRefsInner[] = []
+        const resolvedEntries = await Promise.all(
+            entries.map(async (entry) => ({
+                entry,
+                resolved: await this.resolveOwnerReference(apiConfig, entry.type, entry.value),
+            }))
+        )
 
-        for (const entry of entries) {
-            const resolved = await this.resolveOwnerReference(apiConfig, entry.type, entry.value)
+        const refs: SodPolicySecondaryOwnerRefsInner[] = []
+        for (const { entry, resolved } of resolvedEntries) {
             if (!resolved) {
                 errors.push(`Unable to resolve Co-Owner. Type: ${entry.type}, Value: ${entry.value}`)
                 continue
@@ -76,18 +89,29 @@ export class OwnerResolverService {
         return recipients
     }
 
+    private ownerCacheKey(ownerType: string, ownerValue: string): string {
+        return `${ownerType}:${ownerValue}`
+    }
+
     private async resolveOwnerReference(
         apiConfig: Configuration,
         ownerType: string,
         ownerValue: string
     ): Promise<OwnerReference | undefined> {
+        const cacheKey = this.ownerCacheKey(ownerType, ownerValue)
+        if (this.ownerCache.has(cacheKey)) {
+            return this.ownerCache.get(cacheKey)
+        }
+
+        let resolved: OwnerReference | undefined
         if (ownerType === DtoType.Identity) {
-            return this.searchService.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, ownerValue)
+            resolved = await this.searchService.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, ownerValue)
+        } else if (ownerType === DtoType.GovernanceGroup) {
+            resolved = await this.searchGovGroupByName(apiConfig, ownerValue)
         }
-        if (ownerType === DtoType.GovernanceGroup) {
-            return this.searchGovGroupByName(apiConfig, ownerValue)
-        }
-        return undefined
+
+        this.ownerCache.set(cacheKey, resolved)
+        return resolved
     }
 
     private async searchGovGroupByName(apiConfig: Configuration, govGroupName: string): Promise<OwnerReference | undefined> {
@@ -110,6 +134,10 @@ export class OwnerResolverService {
     }
 
     private async findGovGroupMembers(apiConfig: Configuration, govGroupId: string): Promise<OwnerReference[]> {
+        if (this.govGroupMembersCache.has(govGroupId)) {
+            return this.govGroupMembersCache.get(govGroupId)!
+        }
+
         const govGroupApi = new GovernanceGroupsApi(apiConfig)
         const request = { workgroupId: govGroupId }
 
@@ -119,14 +147,16 @@ export class OwnerResolverService {
             request
         )
 
-        if (!govGroupMembers || govGroupMembers.data.length === 0) {
-            return []
-        }
+        const members =
+            !govGroupMembers || govGroupMembers.data.length === 0
+                ? []
+                : govGroupMembers.data.map((member) => ({
+                      id: member.id,
+                      type: DtoType.Identity,
+                      name: member.name,
+                  }))
 
-        return govGroupMembers.data.map((member) => ({
-            id: member.id,
-            type: DtoType.Identity,
-            name: member.name,
-        }))
+        this.govGroupMembersCache.set(govGroupId, members)
+        return members
     }
 }

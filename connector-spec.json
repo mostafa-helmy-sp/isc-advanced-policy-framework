@@ -157,6 +157,13 @@
 							"required": true
 						},
 						{
+							"key": "maxConcurrentPolicies",
+							"type": "number",
+							"label": "Max Concurrent Policies",
+							"required": false,
+							"helpKey": "Limits how many policies are processed simultaneously when parallel processing is enabled. Default is 10."
+						},
+						{
 							"key": "spConnDebugLoggingEnabled",
 							"type": "checkbox",
 							"label": "Enable Debug Logging",

@@ -46,7 +46,7 @@ Exact scope names depend on your tenant's OAuth client configuration. Use the IS
 
 ## Migration from V2025
 
-This connector migrated from `sailpoint-api-client` 1.x (year-based V2025 APIs) to 2.x (per-service v1 APIs) in version 0.13.0. Legacy V2025 endpoints remain available until Q1 2029 per SailPoint's deprecation schedule.
+This connector migrated from `sailpoint-api-client` 1.x (year-based V2025 APIs) to 2.x (per-service v1 APIs) in version 1.0.0 (development release 0.13.0). Legacy V2025 endpoints remain available until Q1 2029 per SailPoint's deprecation schedule.
 
 See the [SailPoint API versioning migration guide](https://developer.sailpoint.com/docs/api/api-versioning-migration) for details.
 

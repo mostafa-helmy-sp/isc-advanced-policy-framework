@@ -2,7 +2,7 @@ import { parsePolicyEnabled, PolicyConfig } from '../src/model/policy-config'
 import { buildCampaignAccessConstraints, buildPolicyConflictingAccessCriteria } from '../src/builders/access-constraint-builder'
 import { buildCampaignSchedule, buildPolicySchedule } from '../src/builders/schedule-builder'
 import { resolveConnectorSettings } from '../src/config/connector-config'
-import { DEFAULT_MAX_ENTITLEMENTS_PER_POLICY_SIDE, DEFAULT_WEEKLY_SCHEDULE_DAY } from '../src/config/defaults'
+import { DEFAULT_MAX_CONCURRENT_POLICIES, DEFAULT_MAX_ENTITLEMENTS_PER_POLICY_SIDE, DEFAULT_WEEKLY_SCHEDULE_DAY } from '../src/config/defaults'
 
 describe('PolicyConfig', () => {
     it('parses enabled values', () => {
@@ -139,5 +139,6 @@ describe('connector defaults', () => {
         expect(settings.weeklyScheduleDay).toEqual(DEFAULT_WEEKLY_SCHEDULE_DAY)
         expect(settings.maxEntitlementsPerPolicySide).toBe(DEFAULT_MAX_ENTITLEMENTS_PER_POLICY_SIDE)
         expect(settings.parallelProcessing).toBe(false)
+        expect(settings.maxConcurrentPolicies).toBe(DEFAULT_MAX_CONCURRENT_POLICIES)
     })
 })

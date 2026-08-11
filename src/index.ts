@@ -17,6 +17,7 @@ import { ConnectorConfig } from './config/connector-config'
 import { IscClient, PolicyType } from './isc-client'
 import { PolicyConfig, toPolicyConfigAccount } from './model/policy-config'
 import { PolicyImpl } from './model/policy-impl'
+import { runWithConcurrencyLimit } from './utils/concurrency-pool'
 
 async function processPolicyConfigs(
     policyConfigObjects: Account[],
@@ -24,25 +25,24 @@ async function processPolicyConfigs(
     parallel: boolean,
     res: Response<StdAccountListOutput>
 ): Promise<void> {
+    const sodPolicyConfigs = policyConfigObjects
+        .map((policyConfigObject) => new PolicyConfig(toPolicyConfigAccount(policyConfigObject)))
+        .filter((policyConfig) => policyConfig.policyType === PolicyType.SOD)
+
     if (parallel) {
-        logger.info('stdAccountList running in parallel mode')
-        const policyImpls: Promise<PolicyImpl>[] = []
-        for (const policyConfigObject of policyConfigObjects) {
-            const policyConfig = new PolicyConfig(toPolicyConfigAccount(policyConfigObject))
-            if (policyConfig.policyType === PolicyType.SOD) {
-                policyImpls.push(iscClient.processSodPolicyConfig(policyConfig))
-            }
-        }
+        const maxConcurrent = iscClient.getMaxConcurrentPolicies()
+        logger.info(`stdAccountList running in parallel mode (max ${maxConcurrent} concurrent policies)`)
+        const policyImpls = await runWithConcurrencyLimit(
+            sodPolicyConfigs.map((policyConfig) => () => iscClient.processSodPolicyConfig(policyConfig)),
+            maxConcurrent
+        )
         for (const policyImpl of policyImpls) {
-            res.send(await policyImpl)
+            res.send(policyImpl)
         }
     } else {
         logger.info('stdAccountList running in serial mode')
-        for (const policyConfigObject of policyConfigObjects) {
-            const policyConfig = new PolicyConfig(toPolicyConfigAccount(policyConfigObject))
-            if (policyConfig.policyType === PolicyType.SOD) {
-                res.send(await iscClient.processSodPolicyConfig(policyConfig))
-            }
+        for (const policyConfig of sodPolicyConfigs) {
+            res.send(await iscClient.processSodPolicyConfig(policyConfig))
         }
     }
 }
