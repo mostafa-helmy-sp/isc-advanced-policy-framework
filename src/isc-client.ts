@@ -130,9 +130,13 @@ export class IscClient {
         policyImpl: PolicyImpl,
         errorMessages: string[]
     ): Promise<void> {
-        const existingPolicy = await this.sodPolicyService.findExistingPolicy(apiConfig, policyConfig)
-        if (existingPolicy?.id) {
-            const errorMessage = await this.sodPolicyService.deletePolicy(apiConfig, existingPolicy.id)
+        const existingPolicyResult = await this.sodPolicyService.findExistingPolicy(apiConfig, policyConfig)
+        if (existingPolicyResult.error) {
+            errorMessages.push(existingPolicyResult.error)
+            return
+        }
+        if (existingPolicyResult.policy?.id) {
+            const errorMessage = await this.sodPolicyService.deletePolicy(apiConfig, existingPolicyResult.policy.id)
             if (errorMessage) {
                 errorMessages.push(errorMessage)
             } else {
@@ -150,16 +154,40 @@ export class IscClient {
         errorMessages: string[]
     ): Promise<boolean> {
         let canProcess = true
-        let [query1Entitlements, query2Entitlements] = await Promise.all([
+        const [query1Result, query2Result] = await Promise.all([
             this.searchService.searchEntitlementsByQuery(apiConfig, policyConfig.query1),
             this.searchService.searchEntitlementsByQuery(apiConfig, policyConfig.query2),
         ])
 
-        if (this.settings.resolveNestedEntitlements) {
-            ;[query1Entitlements, query2Entitlements] = await Promise.all([
+        if (query1Result.error) {
+            canProcess = false
+            errorMessages.push(query1Result.error)
+        }
+        if (query2Result.error) {
+            canProcess = false
+            errorMessages.push(query2Result.error)
+        }
+
+        let query1Entitlements = query1Result.items
+        let query2Entitlements = query2Result.items
+
+        if (this.settings.resolveNestedEntitlements && !query1Result.error && !query2Result.error) {
+            const [hierarchy1, hierarchy2] = await Promise.all([
                 this.entitlementHierarchyService.includeEntitlementHierarchy(apiConfig, query1Entitlements),
                 this.entitlementHierarchyService.includeEntitlementHierarchy(apiConfig, query2Entitlements),
             ])
+            if (hierarchy1.error) {
+                canProcess = false
+                errorMessages.push(hierarchy1.error)
+            } else {
+                query1Entitlements = hierarchy1.items
+            }
+            if (hierarchy2.error) {
+                canProcess = false
+                errorMessages.push(hierarchy2.error)
+            } else {
+                query2Entitlements = hierarchy2.items
+            }
         }
 
         policyImpl.attributes.leftHandEntitlements = JSON.stringify(buildEntitlementNameArray(query1Entitlements))
@@ -167,11 +195,11 @@ export class IscClient {
         policyImpl.attributes.leftHandEntitlementCount = query1Entitlements.length
         policyImpl.attributes.rightHandEntitlementCount = query2Entitlements.length
 
-        if (query1Entitlements.length === 0) {
+        if (!query1Result.error && query1Entitlements.length === 0) {
             canProcess = false
             errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}] returns no entitlements`)
         }
-        if (query2Entitlements.length === 0) {
+        if (!query2Result.error && query2Entitlements.length === 0) {
             canProcess = false
             errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}] returns no entitlements`)
         }
@@ -188,18 +216,30 @@ export class IscClient {
             )
         }
 
-        const [policyOwner, violationOwner] = await Promise.all([
+        const [policyOwnerResult, violationOwnerResult] = await Promise.all([
             this.ownerResolver.resolvePolicyOwner(apiConfig, policyConfig),
             this.ownerResolver.resolveViolationOwner(apiConfig, policyConfig),
         ])
-        if (!policyOwner) {
+        const policyOwner = policyOwnerResult.owner
+        const violationOwner = violationOwnerResult.owner
+
+        if (policyOwnerResult.error) {
+            canProcess = false
+            errorMessages.push(policyOwnerResult.error)
+        } else if (!policyOwner) {
             canProcess = false
             errorMessages.push(
                 `Unable to resolve Policy Owner. Type: ${policyConfig.policyOwnerType}, Value: ${policyConfig.policyOwner}`
             )
         }
 
-        if (!violationOwner && policyConfig.violationOwnerType !== ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager) {
+        if (violationOwnerResult.error) {
+            canProcess = false
+            errorMessages.push(violationOwnerResult.error)
+        } else if (
+            !violationOwner &&
+            policyConfig.violationOwnerType !== ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager
+        ) {
             canProcess = false
             errorMessages.push(
                 `Unable to resolve Violation Manager. Type: ${policyConfig.violationOwnerType}, Value: ${policyConfig.violationOwner}`
@@ -224,16 +264,20 @@ export class IscClient {
 
         const conflictingAccessCriteria = buildPolicyConflictingAccessCriteria(policyConfig, query1Entitlements, query2Entitlements)
         const violationOwnerAssignmentConfig = buildViolationOwnerAssignmentConfig(violationOwner)
-        const existingPolicy = await this.sodPolicyService.findExistingPolicy(apiConfig, policyConfig)
+        const existingPolicyResult = await this.sodPolicyService.findExistingPolicy(apiConfig, policyConfig)
+        if (existingPolicyResult.error) {
+            errorMessages.push(existingPolicyResult.error)
+            return false
+        }
 
         let policyId = ''
         let policyQuery = ''
         let errorMessage = ''
 
-        if (existingPolicy?.id) {
+        if (existingPolicyResult.policy?.id) {
             ;[errorMessage, policyQuery] = await this.sodPolicyService.updatePolicy(
                 apiConfig,
-                existingPolicy.id,
+                existingPolicyResult.policy.id,
                 policyConfig,
                 policyOwner as SodPolicyOwnerRef,
                 violationOwnerAssignmentConfig,
@@ -241,7 +285,7 @@ export class IscClient {
                 levelResult.level,
                 coOwnerResult.refs
             )
-            policyId = existingPolicy.id
+            policyId = existingPolicyResult.policy.id
         } else {
             ;[errorMessage, policyId, policyQuery] = await this.sodPolicyService.createPolicy(
                 apiConfig,
@@ -278,37 +322,60 @@ export class IscClient {
             }
             const policySchedule = buildPolicySchedule(policyConfig.policySchedule, scheduleOptions)
             if (policySchedule) {
-                const policyRecipients = await this.ownerResolver.resolvePolicyRecipients(
+                const recipientsResult = await this.ownerResolver.resolvePolicyRecipients(
                     apiConfig,
                     policyConfig,
                     violationOwner,
                     policyOwner
                 )
-                errorMessage = await this.sodPolicyService.setPolicySchedule(
-                    apiConfig,
-                    policyId,
-                    policyConfig,
-                    policySchedule,
-                    policyRecipients as SodRecipient[]
-                )
-                if (errorMessage) {
-                    errorMessages.push(errorMessage)
+                if (recipientsResult.error) {
+                    errorMessages.push(recipientsResult.error)
                 } else {
-                    policyImpl.attributes.policyScheduleConfigured = true
+                    errorMessage = await this.sodPolicyService.setPolicySchedule(
+                        apiConfig,
+                        policyId,
+                        policyConfig,
+                        policySchedule,
+                        recipientsResult.recipients as SodRecipient[]
+                    )
+                    if (errorMessage) {
+                        errorMessages.push(errorMessage)
+                    } else {
+                        policyImpl.attributes.policyScheduleConfigured = true
+                    }
                 }
             } else {
                 errorMessages.push(`Unable to build policy schedule using schedule [${policyConfig.policySchedule}]`)
             }
         }
 
-        const [query1AccessProfiles, query2AccessProfiles] = await Promise.all([
+        const [query1AccessProfilesResult, query2AccessProfilesResult] = await Promise.all([
             this.searchService.searchAccessProfilesByEntitlements(apiConfig, query1Entitlements),
             this.searchService.searchAccessProfilesByEntitlements(apiConfig, query2Entitlements),
         ])
-        const [query1Roles, query2Roles] = await Promise.all([
+        if (query1AccessProfilesResult.error) {
+            errorMessages.push(query1AccessProfilesResult.error)
+        }
+        if (query2AccessProfilesResult.error) {
+            errorMessages.push(query2AccessProfilesResult.error)
+        }
+
+        const query1AccessProfiles = query1AccessProfilesResult.items
+        const query2AccessProfiles = query2AccessProfilesResult.items
+
+        const [query1RolesResult, query2RolesResult] = await Promise.all([
             this.searchService.searchRolesByAccessProfilesOrEntitlements(apiConfig, query1Entitlements, query1AccessProfiles),
             this.searchService.searchRolesByAccessProfilesOrEntitlements(apiConfig, query2Entitlements, query2AccessProfiles),
         ])
+        if (query1RolesResult.error) {
+            errorMessages.push(query1RolesResult.error)
+        }
+        if (query2RolesResult.error) {
+            errorMessages.push(query2RolesResult.error)
+        }
+
+        const query1Roles = query1RolesResult.items
+        const query2Roles = query2RolesResult.items
 
         policyImpl.attributes.leftHandAccessProfiles = JSON.stringify(buildNameArray(query1AccessProfiles))
         policyImpl.attributes.rightHandAccessProfiles = JSON.stringify(buildNameArray(query2AccessProfiles))
@@ -375,21 +442,26 @@ export class IscClient {
             return
         }
 
-        const existingCampaign = await this.campaignService.findExistingCampaign(apiConfig, policyConfig)
+        const existingCampaignResult = await this.campaignService.findExistingCampaign(apiConfig, policyConfig)
+        if (existingCampaignResult.error) {
+            errorMessages.push(existingCampaignResult.error)
+            return
+        }
+
         let campaignId = ''
         let errorMessage = ''
 
-        if (existingCampaign?.id) {
+        if (existingCampaignResult.campaign?.id) {
             errorMessage = await this.campaignService.updatePolicyCampaign(
                 apiConfig,
-                existingCampaign.id,
+                existingCampaignResult.campaign.id,
                 policyConfig,
                 policyQuery,
                 accessConstraints,
                 violationOwner as Campaign2AllOfSearchCampaignInfoReviewer | undefined,
                 this.settings.campaignDuration
             )
-            campaignId = existingCampaign.id
+            campaignId = existingCampaignResult.campaign.id
         } else {
             ;[errorMessage, campaignId] = await this.campaignService.createPolicyCampaign(
                 apiConfig,
@@ -451,9 +523,13 @@ export class IscClient {
             return
         }
 
-        const existingCampaign = await this.campaignService.findExistingCampaign(apiConfig, policyConfig)
-        if (existingCampaign?.id) {
-            const errorMessage = await this.campaignService.deletePolicyCampaign(apiConfig, existingCampaign.id)
+        const existingCampaignResult = await this.campaignService.findExistingCampaign(apiConfig, policyConfig)
+        if (existingCampaignResult.error) {
+            errorMessages.push(existingCampaignResult.error)
+            return
+        }
+        if (existingCampaignResult.campaign?.id) {
+            const errorMessage = await this.campaignService.deletePolicyCampaign(apiConfig, existingCampaignResult.campaign.id)
             if (errorMessage) {
                 errorMessages.push(errorMessage)
             } else {

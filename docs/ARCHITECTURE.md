@@ -36,7 +36,7 @@ Generic CSV Source (policy rows as accounts)
 
 ## Parallel processing
 
-When `parallelProcessing` is enabled, policies are processed concurrently up to `maxConcurrentPolicies` (default 10). Each active policy receives its own SDK `Configuration` instance to reduce OAuth token contention and 429 rate-limit errors during large batch runs.
+When `parallelProcessing` is enabled, policies are processed concurrently up to `maxConcurrentPolicies` (default 3). Each active policy receives its own SDK `Configuration` instance to reduce OAuth token contention and 429 rate-limit errors during large batch runs.
 
 Within each policy, independent API calls (entitlement queries, owner resolution, access profile and role searches) run in parallel where safe.
 

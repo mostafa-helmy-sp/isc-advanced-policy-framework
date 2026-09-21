@@ -42,7 +42,8 @@ Exact scope names depend on your tenant's OAuth client configuration. Use the IS
 ## Pagination and retry
 
 - List and search operations use the SDK `Paginator` helper (250 items per page by default).
-- HTTP 429 responses are retried up to 10 times with exponential backoff.
+- HTTP 429 responses are retried up to 10 times in application code (`wrapApiCall` / `wrapApiMutation`), preferring the `Retry-After` header when present and otherwise using exponential backoff.
+- After retries are exhausted, the real API error is returned on the policy account `errorMessages` attribute (not collapsed into an empty entitlement query result). This applies to Search, owner/governance-group resolution, SOD policy lookup and mutations, certification campaign lookup and mutations, and entitlement hierarchy expansion.
 
 ## Migration from V2025
 

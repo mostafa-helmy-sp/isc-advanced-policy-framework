@@ -7,8 +7,18 @@ import {
 } from '../types/sailpoint-api'
 import { EntitlementHierarchy } from '../types/enums'
 import { EntitlementDocument } from '../types/search-documents'
-import { buildIdArray, wrapApiCall } from '../utils/api-helper'
+import { buildIdArray, SearchItemsResult, wrapApiCallResult } from '../utils/api-helper'
 import { SearchService } from './search-service'
+
+interface HierarchyIdsResult {
+    ids: string[]
+    error?: string
+}
+
+interface HierarchyDirectionResult {
+    direction: EntitlementHierarchy
+    error?: string
+}
 
 export class EntitlementHierarchyService {
     private readonly hierarchyCache: Record<string, EntitlementHierarchy> = {}
@@ -18,53 +28,71 @@ export class EntitlementHierarchyService {
     async includeEntitlementHierarchy(
         apiConfig: Configuration,
         entitlements: EntitlementDocument[]
-    ): Promise<EntitlementDocument[]> {
+    ): Promise<SearchItemsResult<EntitlementDocument>> {
         const allHierarchy = await Promise.all(
             entitlements.map((entitlement) => this.getEntitlementHierarchy(apiConfig, entitlement))
         )
-        return [...new Map(allHierarchy.flat().map((item) => [item.id, item])).values()]
+        const firstError = allHierarchy.find((result) => result.error)?.error
+        if (firstError) {
+            return { items: [], error: firstError }
+        }
+        return {
+            items: [...new Map(allHierarchy.flatMap((result) => result.items).map((item) => [item.id, item])).values()],
+        }
     }
 
     async getEntitlementHierarchy(
         apiConfig: Configuration,
         entitlement: EntitlementDocument
-    ): Promise<EntitlementDocument[]> {
-        const hierarchyDirection = await this.getEntitlementHierarchyDirection(apiConfig, entitlement)
-        let entitlementIds: string[] = []
-
-        if (hierarchyDirection === EntitlementHierarchy.CHILD) {
-            entitlementIds = await this.getChildEntitlementIds(apiConfig, entitlement.id)
+    ): Promise<SearchItemsResult<EntitlementDocument>> {
+        const directionResult = await this.getEntitlementHierarchyDirection(apiConfig, entitlement)
+        if (directionResult.error) {
+            return { items: [], error: directionResult.error }
         }
-        if (hierarchyDirection === EntitlementHierarchy.PARENT) {
-            entitlementIds = await this.getParentEntitlementIds(apiConfig, entitlement.id)
+
+        let entitlementIdsResult: HierarchyIdsResult = { ids: [] }
+        if (directionResult.direction === EntitlementHierarchy.CHILD) {
+            entitlementIdsResult = await this.getChildEntitlementIds(apiConfig, entitlement.id)
+        }
+        if (directionResult.direction === EntitlementHierarchy.PARENT) {
+            entitlementIdsResult = await this.getParentEntitlementIds(apiConfig, entitlement.id)
+        }
+        if (entitlementIdsResult.error) {
+            return { items: [], error: entitlementIdsResult.error }
         }
 
         logger.debug(
-            `Found ${entitlementIds.length} ${hierarchyDirection} entitlements in the hierarchy for entitlement: {${entitlement.id}:${entitlement.name}}`
+            `Found ${entitlementIdsResult.ids.length} ${directionResult.direction} entitlements in the hierarchy for entitlement: {${entitlement.id}:${entitlement.name}}`
         )
 
-        if (entitlementIds.length === 0) {
-            return [entitlement]
+        if (entitlementIdsResult.ids.length === 0) {
+            return { items: [entitlement] }
         }
 
-        const nested = await this.searchService.searchEntitlementsByIds(apiConfig, entitlementIds)
-        return [entitlement, ...nested]
+        const nested = await this.searchService.searchEntitlementsByIds(apiConfig, entitlementIdsResult.ids)
+        if (nested.error) {
+            return { items: [], error: nested.error }
+        }
+        return { items: [entitlement, ...nested.items] }
     }
 
     private async getEntitlementHierarchyDirection(
         apiConfig: Configuration,
         entitlement: EntitlementDocument
-    ): Promise<EntitlementHierarchy> {
+    ): Promise<HierarchyDirectionResult> {
         const key = this.getEntitlementSchemaKey(entitlement)
         if (!key) {
-            return EntitlementHierarchy.NONE
+            return { direction: EntitlementHierarchy.NONE }
         }
         if (this.hierarchyCache[key]) {
-            return this.hierarchyCache[key]
+            return { direction: this.hierarchyCache[key] }
         }
 
         const hierarchyDirection = await this.fetchEntitlementHierarchyDirection(apiConfig, entitlement)
-        this.hierarchyCache[key] = hierarchyDirection
+        if (hierarchyDirection.error) {
+            return hierarchyDirection
+        }
+        this.hierarchyCache[key] = hierarchyDirection.direction
         return hierarchyDirection
     }
 
@@ -78,79 +106,96 @@ export class EntitlementHierarchyService {
     private async fetchEntitlementHierarchyDirection(
         apiConfig: Configuration,
         entitlement: EntitlementDocument
-    ): Promise<EntitlementHierarchy> {
+    ): Promise<HierarchyDirectionResult> {
         if (!entitlement.source) {
-            return EntitlementHierarchy.NONE
+            return { direction: EntitlementHierarchy.NONE }
         }
 
         const sourceApi = new SourcesApi(apiConfig)
         const getSchemasRequest = { sourceId: entitlement.source.id ?? 'N/A' }
 
-        const schemas = await wrapApiCall(
+        const schemas = await wrapApiCallResult(
             () => sourceApi.getSourceSchemasV1(getSchemasRequest).then((r) => r.data),
             'Error getting source schemas using Sources API',
             getSchemasRequest
         )
 
-        if (!schemas || schemas.length === 0) {
-            return EntitlementHierarchy.NONE
+        if (!schemas.ok) {
+            return { direction: EntitlementHierarchy.NONE, error: schemas.error }
+        }
+        if (schemas.data.length === 0) {
+            return { direction: EntitlementHierarchy.NONE }
         }
 
-        const schema = schemas.find((s) => s.name?.toLowerCase() === entitlement.schema?.toLowerCase())
+        const schema = schemas.data.find((s) => s.name?.toLowerCase() === entitlement.schema?.toLowerCase())
         if (!schema?.hierarchyAttribute) {
-            return EntitlementHierarchy.NONE
+            return { direction: EntitlementHierarchy.NONE }
         }
 
         const childHierarchy = (schema.configuration as { childHierarchy?: boolean | string })?.childHierarchy
         if (childHierarchy === true || childHierarchy === 'true' || childHierarchy === 'True') {
-            return EntitlementHierarchy.PARENT
+            return { direction: EntitlementHierarchy.PARENT }
         }
-        return EntitlementHierarchy.CHILD
+        return { direction: EntitlementHierarchy.CHILD }
     }
 
-    private async getChildEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<string[]> {
+    private async getChildEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<HierarchyIdsResult> {
         if (!entitlementId) {
-            return []
+            return { ids: [] }
         }
 
         const entitlementsApi = new EntitlementsApi(apiConfig)
         const request = { id: entitlementId }
-        const childEntitlements = await wrapApiCall(
+        const childEntitlements = await wrapApiCallResult(
             () => Paginator.paginate(entitlementsApi, entitlementsApi.listEntitlementChildrenV1, request),
             'Error getting child entitlements using Entitlements API',
             request
         )
 
-        if (!childEntitlements || childEntitlements.data.length === 0) {
-            return []
+        if (!childEntitlements.ok) {
+            return { ids: [], error: childEntitlements.error }
+        }
+        if (childEntitlements.data.data.length === 0) {
+            return { ids: [] }
         }
 
         const nested = await Promise.all(
-            childEntitlements.data.map((child) => this.getChildEntitlementIds(apiConfig, child.id))
+            childEntitlements.data.data.map((child) => this.getChildEntitlementIds(apiConfig, child.id))
         )
-        return [...new Set([...nested.flat(), ...buildIdArray(childEntitlements.data)])]
+        const nestedError = nested.find((result) => result.error)?.error
+        if (nestedError) {
+            return { ids: [], error: nestedError }
+        }
+        return { ids: [...new Set([...nested.flatMap((result) => result.ids), ...buildIdArray(childEntitlements.data.data)])] }
     }
 
-    private async getParentEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<string[]> {
+    private async getParentEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<HierarchyIdsResult> {
         if (!entitlementId) {
-            return []
+            return { ids: [] }
         }
 
         const entitlementsApi = new EntitlementsApi(apiConfig)
         const request = { id: entitlementId }
-        const parentEntitlements = await wrapApiCall(
+        const parentEntitlements = await wrapApiCallResult(
             () => Paginator.paginate(entitlementsApi, entitlementsApi.listEntitlementParentsV1, request),
             'Error getting parent entitlements using Entitlements API',
             request
         )
 
-        if (!parentEntitlements || parentEntitlements.data.length === 0) {
-            return []
+        if (!parentEntitlements.ok) {
+            return { ids: [], error: parentEntitlements.error }
+        }
+        if (parentEntitlements.data.data.length === 0) {
+            return { ids: [] }
         }
 
         const nested = await Promise.all(
-            parentEntitlements.data.map((parent) => this.getParentEntitlementIds(apiConfig, parent.id))
+            parentEntitlements.data.data.map((parent) => this.getParentEntitlementIds(apiConfig, parent.id))
         )
-        return [...new Set([...nested.flat(), ...buildIdArray(parentEntitlements.data)])]
+        const nestedError = nested.find((result) => result.error)?.error
+        if (nestedError) {
+            return { ids: [], error: nestedError }
+        }
+        return { ids: [...new Set([...nested.flatMap((result) => result.ids), ...buildIdArray(parentEntitlements.data.data)])] }
     }
 }

@@ -9,7 +9,9 @@ describe('OwnerResolverService cache', () => {
 
     it('reuses cached owner lookups within the same aggregation run', async () => {
         const searchService = {
-            searchIdentityByAttribute: jest.fn().mockResolvedValue({ id: 'identity-1', name: 'owner', type: DtoType.Identity }),
+            searchIdentityByAttribute: jest.fn().mockResolvedValue({
+                identity: { id: 'identity-1', name: 'owner', type: DtoType.Identity },
+            }),
         } as unknown as SearchService
 
         const resolver = new OwnerResolverService(searchService, 'name')
@@ -29,7 +31,7 @@ describe('OwnerResolverService cache', () => {
     })
 
     it('caches governance group member lookups', async () => {
-        jest.spyOn(apiHelper, 'wrapApiCall').mockImplementation(async (fn) => fn())
+        jest.spyOn(apiHelper, 'wrapApiCallResult').mockImplementation(async (fn) => ({ ok: true, data: await fn() }))
         const paginateSpy = jest.spyOn(Paginator, 'paginate').mockResolvedValue({
             data: [{ id: 'member-1', name: 'Member' }],
         } as never)
@@ -49,7 +51,9 @@ describe('OwnerResolverService cache', () => {
 
     it('clearCaches resets cached owner lookups', async () => {
         const searchService = {
-            searchIdentityByAttribute: jest.fn().mockResolvedValue({ id: 'identity-1', name: 'owner', type: DtoType.Identity }),
+            searchIdentityByAttribute: jest.fn().mockResolvedValue({
+                identity: { id: 'identity-1', name: 'owner', type: DtoType.Identity },
+            }),
         } as unknown as SearchService
 
         const resolver = new OwnerResolverService(searchService, 'name')
@@ -67,5 +71,23 @@ describe('OwnerResolverService cache', () => {
         )
 
         expect(searchService.searchIdentityByAttribute).toHaveBeenCalledTimes(2)
+    })
+
+    it('surfaces API errors instead of treating them as missing owners', async () => {
+        const searchService = {
+            searchIdentityByAttribute: jest.fn().mockResolvedValue({
+                error: 'Error finding identity using Search API: Request failed with status code 429',
+            }),
+        } as unknown as SearchService
+
+        const resolver = new OwnerResolverService(searchService, 'name')
+        const result = await resolver.resolvePolicyOwner(apiConfig, {
+            policyOwnerType: DtoType.Identity,
+            policyOwner: 'owner',
+        } as never)
+
+        expect(result.owner).toBeUndefined()
+        expect(result.error).toContain('status code 429')
+        expect(searchService.searchIdentityByAttribute).toHaveBeenCalledTimes(1)
     })
 })

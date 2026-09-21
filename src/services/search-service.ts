@@ -8,18 +8,28 @@ import {
     OwnerReference,
     RoleDocument,
 } from '../types/search-documents'
-import { buildBatchedIdQueries, buildIdArray, deduplicateById, wrapApiCall } from '../utils/api-helper'
+import {
+    buildBatchedIdQueries,
+    buildIdArray,
+    deduplicateById,
+    SearchItemsResult,
+    wrapApiCallResult,
+} from '../utils/api-helper'
+
+export interface IdentitySearchResult {
+    identity?: OwnerReference
+    error?: string
+}
 
 export class SearchService {
-    async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<EntitlementDocument[]> {
+    async searchEntitlementsByQuery(apiConfig: Configuration, query: string): Promise<SearchItemsResult<EntitlementDocument>> {
         const search = this.buildSearch(SearchIndex.Entitlements, query, this.entitlementIncludes())
-        const result = await this.runSearch<EntitlementDocument>(apiConfig, search, 'Error finding entitlements using Search API')
-        return result ?? []
+        return this.runSearch<EntitlementDocument>(apiConfig, search, 'Error finding entitlements using Search API')
     }
 
-    async searchEntitlementsByIds(apiConfig: Configuration, ids: string[]): Promise<EntitlementDocument[]> {
+    async searchEntitlementsByIds(apiConfig: Configuration, ids: string[]): Promise<SearchItemsResult<EntitlementDocument>> {
         if (ids.length === 0) {
-            return []
+            return { items: [] }
         }
 
         const queries = buildBatchedIdQueries(ids, SEARCH_QUERY_BATCH_SIZE, 'id:', ' OR ')
@@ -35,10 +45,10 @@ export class SearchService {
     async searchAccessProfilesByEntitlements(
         apiConfig: Configuration,
         entitlements: EntitlementDocument[]
-    ): Promise<AccessProfileDocument[]> {
+    ): Promise<SearchItemsResult<AccessProfileDocument>> {
         const entitlementIds = buildIdArray(entitlements)
         if (entitlementIds.length === 0) {
-            return []
+            return { items: [] }
         }
 
         const queries = buildBatchedIdQueries(
@@ -62,7 +72,7 @@ export class SearchService {
         apiConfig: Configuration,
         entitlements: EntitlementDocument[],
         accessProfiles: AccessProfileDocument[]
-    ): Promise<RoleDocument[]> {
+    ): Promise<SearchItemsResult<RoleDocument>> {
         const entitlementIds = buildIdArray(entitlements)
         const accessProfileIds = buildIdArray(accessProfiles)
         const queries: string[] = []
@@ -83,7 +93,7 @@ export class SearchService {
             queries.push(...buildBatchedIdQueries(accessProfileIds, SEARCH_QUERY_BATCH_SIZE, 'accessProfiles.id:', ' OR '))
         }
         if (queries.length === 0) {
-            return []
+            return { items: [] }
         }
 
         return this.runBatchedQueries<RoleDocument>(
@@ -99,7 +109,7 @@ export class SearchService {
         apiConfig: Configuration,
         attribute: string,
         value: string
-    ): Promise<OwnerReference | undefined> {
+    ): Promise<IdentitySearchResult> {
         let query: string
         if (attribute === 'name' || attribute === 'employeeNumber' || attribute === 'id') {
             query = `${attribute}.exact:"${value}"`
@@ -108,12 +118,15 @@ export class SearchService {
         }
 
         const search = this.buildSearch(SearchIndex.Identities, query, ['id', 'name', 'type'])
-        const identities = await this.runSearch<IdentityDocument>(apiConfig, search, 'Error finding identity using Search API')
-        if (!identities || identities.length === 0) {
-            return undefined
+        const result = await this.runSearch<IdentityDocument>(apiConfig, search, 'Error finding identity using Search API')
+        if (result.error) {
+            return { error: result.error }
         }
-        const identity = identities[0]
-        return { id: identity.id, name: identity.name, type: DtoType.Identity }
+        if (result.items.length === 0) {
+            return {}
+        }
+        const identity = result.items[0]
+        return { identity: { id: identity.id, name: identity.name, type: DtoType.Identity } }
     }
 
     private entitlementIncludes(): string[] {
@@ -135,21 +148,36 @@ export class SearchService {
         index: (typeof SearchIndex)[keyof typeof SearchIndex],
         includes: string[],
         errorContext: string
-    ): Promise<T[]> {
+    ): Promise<SearchItemsResult<T>> {
         const batchResults = await Promise.all(
             queries.map((query) => {
                 const search = this.buildSearch(index, query, includes)
                 return this.runSearch<T>(apiConfig, search, errorContext)
             })
         )
-        return deduplicateById(batchResults.flatMap((result) => result ?? []))
+
+        const errors = batchResults.map((result) => result.error).filter((error): error is string => !!error)
+        if (errors.length > 0) {
+            return { items: [], error: errors[0] }
+        }
+
+        return { items: deduplicateById(batchResults.flatMap((result) => result.items)) }
     }
 
-    private async runSearch<T>(apiConfig: Configuration, search: Search, errorContext: string): Promise<T[] | undefined> {
+    private async runSearch<T>(
+        apiConfig: Configuration,
+        search: Search,
+        errorContext: string
+    ): Promise<SearchItemsResult<T>> {
         const searchApi = new SearchApi(apiConfig)
-        return wrapApiCall(async () => {
+        const result = await wrapApiCallResult(async () => {
             const response = await Paginator.paginateSearchApi(searchApi, search)
             return response.data as T[]
         }, errorContext, search)
+
+        if (!result.ok) {
+            return { items: [], error: result.error }
+        }
+        return { items: result.data }
     }
 }

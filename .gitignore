@@ -11,6 +11,9 @@
 .idea/
 *.iml
 
+# JFrog
+.npmrc
+
 # Dependency directories
 node_modules/
 

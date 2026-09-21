@@ -8,12 +8,22 @@ import { PolicyConfig } from '../model/policy-config'
 import { DtoType } from '../types/enums'
 import { OwnerReference } from '../types/search-documents'
 import { parseCoOwnerEntries } from '../utils/owner-parser'
-import { wrapApiCall } from '../utils/api-helper'
+import { wrapApiCallResult } from '../utils/api-helper'
 import { SearchService } from './search-service'
+
+export interface ResolveOwnerResult {
+    owner?: OwnerReference
+    error?: string
+}
 
 export interface ResolveCoOwnersResult {
     refs: SodPolicySecondaryOwnerRefsInner[]
     errors: string[]
+}
+
+export interface ResolveRecipientsResult {
+    recipients: OwnerReference[]
+    error?: string
 }
 
 export class OwnerResolverService {
@@ -30,16 +40,16 @@ export class OwnerResolverService {
         this.govGroupMembersCache.clear()
     }
 
-    async resolvePolicyOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<OwnerReference | undefined> {
+    async resolvePolicyOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<ResolveOwnerResult> {
         return this.resolveOwnerReference(apiConfig, policyConfig.policyOwnerType, policyConfig.policyOwner)
     }
 
-    async resolveViolationOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<OwnerReference | undefined> {
+    async resolveViolationOwner(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<ResolveOwnerResult> {
         if (policyConfig.violationOwnerType === DtoType.Manager) {
-            return undefined
+            return {}
         }
         if (!policyConfig.violationOwner) {
-            return undefined
+            return {}
         }
         return this.resolveOwnerReference(apiConfig, policyConfig.violationOwnerType, policyConfig.violationOwner)
     }
@@ -49,17 +59,21 @@ export class OwnerResolverService {
         const resolvedEntries = await Promise.all(
             entries.map(async (entry) => ({
                 entry,
-                resolved: await this.resolveOwnerReference(apiConfig, entry.type, entry.value),
+                result: await this.resolveOwnerReference(apiConfig, entry.type, entry.value),
             }))
         )
 
         const refs: SodPolicySecondaryOwnerRefsInner[] = []
-        for (const { entry, resolved } of resolvedEntries) {
-            if (!resolved) {
+        for (const { entry, result } of resolvedEntries) {
+            if (result.error) {
+                errors.push(result.error)
+                continue
+            }
+            if (!result.owner) {
                 errors.push(`Unable to resolve Co-Owner. Type: ${entry.type}, Value: ${entry.value}`)
                 continue
             }
-            refs.push(resolved as SodPolicySecondaryOwnerRefsInner)
+            refs.push(result.owner as SodPolicySecondaryOwnerRefsInner)
         }
 
         return { refs, errors }
@@ -70,7 +84,7 @@ export class OwnerResolverService {
         policyConfig: PolicyConfig,
         violationOwner: OwnerReference | undefined,
         policyOwner: OwnerReference | undefined
-    ): Promise<OwnerReference[]> {
+    ): Promise<ResolveRecipientsResult> {
         let recipients: OwnerReference[] = []
 
         if (policyConfig.violationOwnerType === DtoType.Identity && policyConfig.violationOwner && violationOwner) {
@@ -80,13 +94,17 @@ export class OwnerResolverService {
             policyConfig.violationOwner &&
             violationOwner?.id
         ) {
-            recipients = await this.findGovGroupMembers(apiConfig, violationOwner.id)
+            const membersResult = await this.findGovGroupMembers(apiConfig, violationOwner.id)
+            if (membersResult.error) {
+                return { recipients: [], error: membersResult.error }
+            }
+            recipients = membersResult.members
         }
 
         if (recipients.length === 0 && policyOwner) {
             recipients = [policyOwner]
         }
-        return recipients
+        return { recipients }
     }
 
     private ownerCacheKey(ownerType: string, ownerValue: string): string {
@@ -97,66 +115,90 @@ export class OwnerResolverService {
         apiConfig: Configuration,
         ownerType: string,
         ownerValue: string
-    ): Promise<OwnerReference | undefined> {
+    ): Promise<ResolveOwnerResult> {
         const cacheKey = this.ownerCacheKey(ownerType, ownerValue)
         if (this.ownerCache.has(cacheKey)) {
-            return this.ownerCache.get(cacheKey)
+            return { owner: this.ownerCache.get(cacheKey) }
         }
 
-        let resolved: OwnerReference | undefined
         if (ownerType === DtoType.Identity) {
-            resolved = await this.searchService.searchIdentityByAttribute(apiConfig, this.identityResolutionAttribute, ownerValue)
-        } else if (ownerType === DtoType.GovernanceGroup) {
-            resolved = await this.searchGovGroupByName(apiConfig, ownerValue)
+            const result = await this.searchService.searchIdentityByAttribute(
+                apiConfig,
+                this.identityResolutionAttribute,
+                ownerValue
+            )
+            if (result.error) {
+                return { error: result.error }
+            }
+            this.ownerCache.set(cacheKey, result.identity)
+            return { owner: result.identity }
         }
 
-        this.ownerCache.set(cacheKey, resolved)
-        return resolved
+        if (ownerType === DtoType.GovernanceGroup) {
+            const result = await this.searchGovGroupByName(apiConfig, ownerValue)
+            if (result.error) {
+                return { error: result.error }
+            }
+            this.ownerCache.set(cacheKey, result.owner)
+            return { owner: result.owner }
+        }
+
+        return {}
     }
 
-    private async searchGovGroupByName(apiConfig: Configuration, govGroupName: string): Promise<OwnerReference | undefined> {
+    private async searchGovGroupByName(apiConfig: Configuration, govGroupName: string): Promise<ResolveOwnerResult> {
         const filter = `name eq "${govGroupName}"`
         const govGroupApi = new GovernanceGroupsApi(apiConfig)
         const request = { filters: filter }
 
-        const existingGovGroup = await wrapApiCall(
+        const existingGovGroup = await wrapApiCallResult(
             () => govGroupApi.listWorkgroupsV1(request).then((r) => r.data),
             'Error finding Governance Group using Governance-Groups API',
             request
         )
 
-        if (!existingGovGroup || existingGovGroup.length === 0) {
-            return undefined
+        if (!existingGovGroup.ok) {
+            return { error: existingGovGroup.error }
+        }
+        if (existingGovGroup.data.length === 0) {
+            return {}
         }
 
-        const govGroup = existingGovGroup[0]
-        return { id: govGroup.id, name: govGroup.name, type: DtoType.GovernanceGroup }
+        const govGroup = existingGovGroup.data[0]
+        return { owner: { id: govGroup.id, name: govGroup.name, type: DtoType.GovernanceGroup } }
     }
 
-    private async findGovGroupMembers(apiConfig: Configuration, govGroupId: string): Promise<OwnerReference[]> {
+    private async findGovGroupMembers(
+        apiConfig: Configuration,
+        govGroupId: string
+    ): Promise<{ members: OwnerReference[]; error?: string }> {
         if (this.govGroupMembersCache.has(govGroupId)) {
-            return this.govGroupMembersCache.get(govGroupId)!
+            return { members: this.govGroupMembersCache.get(govGroupId)! }
         }
 
         const govGroupApi = new GovernanceGroupsApi(apiConfig)
         const request = { workgroupId: govGroupId }
 
-        const govGroupMembers = await wrapApiCall(
+        const govGroupMembers = await wrapApiCallResult(
             () => Paginator.paginate(govGroupApi, govGroupApi.listWorkgroupMembersV1, request),
             'Error finding Governance Group members using Governance-Groups API',
             request
         )
 
+        if (!govGroupMembers.ok) {
+            return { members: [], error: govGroupMembers.error }
+        }
+
         const members =
-            !govGroupMembers || govGroupMembers.data.length === 0
+            govGroupMembers.data.data.length === 0
                 ? []
-                : govGroupMembers.data.map((member) => ({
+                : govGroupMembers.data.data.map((member) => ({
                       id: member.id,
                       type: DtoType.Identity,
                       name: member.name,
                   }))
 
         this.govGroupMembersCache.set(govGroupId, members)
-        return members
+        return { members }
     }
 }

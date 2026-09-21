@@ -12,24 +12,32 @@ import {
     ViolationOwnerAssignmentConfigAssignmentRuleEnum,
 } from '../types/sailpoint-api'
 import { PolicyConfig } from '../model/policy-config'
-import { wrapApiCall, wrapApiMutation } from '../utils/api-helper'
+import { executeWithRetry, wrapApiCallResult, wrapApiMutation } from '../utils/api-helper'
+
+export interface FindCampaignResult {
+    campaign?: CampaignTemplate
+    error?: string
+}
 
 export class CampaignService {
-    async findExistingCampaign(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<CampaignTemplate | undefined> {
+    async findExistingCampaign(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<FindCampaignResult> {
         const filter = `name eq "${policyConfig.certificationName}"`
         const certsApi = new CertificationCampaignsApi(apiConfig)
         const request = { filters: filter }
 
-        const existingCampaign = await wrapApiCall(
+        const existingCampaign = await wrapApiCallResult(
             () => certsApi.getCampaignTemplatesV1(request).then((r) => r.data),
             'Error finding existing Campaign using Certification-Campaigns API',
             request
         )
 
-        if (!existingCampaign || existingCampaign.length === 0 || !existingCampaign[0].id) {
-            return undefined
+        if (!existingCampaign.ok) {
+            return { error: existingCampaign.error }
         }
-        return existingCampaign[0]
+        if (existingCampaign.data.length === 0 || !existingCampaign.data[0].id) {
+            return {}
+        }
+        return { campaign: existingCampaign.data[0] }
     }
 
     async deletePolicyCampaign(apiConfig: Configuration, campaignId: string): Promise<string> {
@@ -83,7 +91,10 @@ export class CampaignService {
         }
 
         try {
-            const newCampaign = await certsApi.createCampaignTemplateV1(request)
+            const newCampaign = await executeWithRetry(
+                () => certsApi.createCampaignTemplateV1(request),
+                'Error creating new Campaign using Certification-Campaigns API'
+            )
             return ['', newCampaign.data.id ?? '']
         } catch (error) {
             const errorMessage = `Error creating new Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`

@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.1 - 2026-09-21
+
+### Fixed
+- Replaced ineffective SDK `axios-retry` / `retriesConfig` with application-level HTTP 429 retry (honors `Retry-After`, exponential backoff, INFO logging).
+- Surface real API failure messages on policy `errorMessages` instead of collapsing failed searches into misleading "returns no entitlements" errors. Applies across Search, owner resolution, SOD policy lookup/create/update, campaign lookup/create/update, entitlement hierarchy, and governance-group member lookup.
+
+### Changed
+- Default `maxConcurrentPolicies` lowered from 10 to 3 to reduce rate-limit pressure on large batch aggregations.
+- Removed unused `axios-retry` dependency.
+
 ## 1.0.0 - 2026-08-11
 
 First stable release after the SDK 2.0 modernization and modular refactor (development releases were tracked as 0.13.0–0.14.0).

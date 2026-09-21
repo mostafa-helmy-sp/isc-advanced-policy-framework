@@ -14,24 +14,32 @@ import {
     ViolationOwnerAssignmentConfig,
 } from '../types/sailpoint-api'
 import { PolicyConfig } from '../model/policy-config'
-import { wrapApiCall, wrapApiMutation } from '../utils/api-helper'
+import { executeWithRetry, wrapApiCallResult, wrapApiMutation } from '../utils/api-helper'
+
+export interface FindPolicyResult {
+    policy?: SodPolicy
+    error?: string
+}
 
 export class SodPolicyService {
-    async findExistingPolicy(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<SodPolicy | undefined> {
+    async findExistingPolicy(apiConfig: Configuration, policyConfig: PolicyConfig): Promise<FindPolicyResult> {
         const filter = `name eq "${policyConfig.policyName}"`
         const policyApi = new SODPoliciesApi(apiConfig)
         const request = { filters: filter }
 
-        const existingPolicy = await wrapApiCall(
+        const existingPolicy = await wrapApiCallResult(
             () => policyApi.listSodPoliciesV1(request).then((r) => r.data),
             'Error finding existing Policy using SOD-Policies API',
             request
         )
 
-        if (!existingPolicy || existingPolicy.length === 0 || !existingPolicy[0].id) {
-            return undefined
+        if (!existingPolicy.ok) {
+            return { error: existingPolicy.error }
         }
-        return existingPolicy[0]
+        if (existingPolicy.data.length === 0 || !existingPolicy.data[0].id) {
+            return {}
+        }
+        return { policy: existingPolicy.data[0] }
     }
 
     async deletePolicy(apiConfig: Configuration, policyId: string): Promise<string> {
@@ -74,7 +82,10 @@ export class SodPolicyService {
         }
 
         try {
-            const newPolicy = await policyApi.createSodPolicyV1(request)
+            const newPolicy = await executeWithRetry(
+                () => policyApi.createSodPolicyV1(request),
+                'Error creating a new Policy using SOD-Policies API'
+            )
             return ['', newPolicy.data.id ?? '', newPolicy.data.policyQuery ?? '']
         } catch (error) {
             const errorMessage = `Error creating a new Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
@@ -113,7 +124,10 @@ export class SodPolicyService {
         }
 
         try {
-            const patchedPolicy = await policyApi.patchSodPolicyV1(request)
+            const patchedPolicy = await executeWithRetry(
+                () => policyApi.patchSodPolicyV1(request),
+                'Error updating existing Policy using SOD-Policies API'
+            )
             return ['', patchedPolicy.data.policyQuery ?? '']
         } catch (error) {
             const errorMessage = `Error updating existing Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
