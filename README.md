@@ -47,6 +47,8 @@ npm run build
 npm run pack-zip
 ```
 
+The project lockfile is registry-neutral, while internal registry configuration belongs in the user's npm config. No special command is required when adding or updating packages.
+
 The package is written to `dist/advanced-policy-framework-<version>.zip`. Deploy it to ISC and configure the source using `connector-spec.json`.
 
 ## Documentation

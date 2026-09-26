@@ -14,7 +14,13 @@ jobs:
         with:
           node-version: '20'
           cache: npm
-      - run: npm ci
+      - name: Reject internal registry URLs in the lockfile
+        run: |
+          if grep -q 'sailpoint.jfrog.io' package-lock.json; then
+            echo "package-lock.json must not pin packages to an internal registry"
+            exit 1
+          fi
+      - run: npm ci --registry=https://registry.npmjs.org
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
