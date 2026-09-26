@@ -7,6 +7,7 @@
     "strict": true,
     "moduleResolution": "Node16",
     "esModuleInterop": true,
+    "isolatedModules": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },

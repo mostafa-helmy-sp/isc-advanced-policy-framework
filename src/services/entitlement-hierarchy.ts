@@ -1,4 +1,3 @@
-import { logger } from '@sailpoint/connector-sdk'
 import {
     Configuration,
     EntitlementsApi,
@@ -8,6 +7,7 @@ import {
 import { EntitlementHierarchy } from '../types/enums'
 import { EntitlementDocument } from '../types/search-documents'
 import { buildIdArray, SearchItemsResult, wrapApiCallResult } from '../utils/api-helper'
+import { logger } from '../utils/logger'
 import { SearchService } from './search-service'
 
 interface HierarchyIdsResult {
@@ -139,10 +139,16 @@ export class EntitlementHierarchyService {
         return { direction: EntitlementHierarchy.CHILD }
     }
 
-    private async getChildEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<HierarchyIdsResult> {
-        if (!entitlementId) {
+    /** Collects all descendant ids. `visited` stops circular group nesting from recursing forever. */
+    private async getChildEntitlementIds(
+        apiConfig: Configuration,
+        entitlementId: string | undefined,
+        visited: Set<string> = new Set()
+    ): Promise<HierarchyIdsResult> {
+        if (!entitlementId || visited.has(entitlementId)) {
             return { ids: [] }
         }
+        visited.add(entitlementId)
 
         const entitlementsApi = new EntitlementsApi(apiConfig)
         const request = { id: entitlementId }
@@ -160,7 +166,7 @@ export class EntitlementHierarchyService {
         }
 
         const nested = await Promise.all(
-            childEntitlements.data.data.map((child) => this.getChildEntitlementIds(apiConfig, child.id))
+            childEntitlements.data.data.map((child) => this.getChildEntitlementIds(apiConfig, child.id, visited))
         )
         const nestedError = nested.find((result) => result.error)?.error
         if (nestedError) {
@@ -169,10 +175,16 @@ export class EntitlementHierarchyService {
         return { ids: [...new Set([...nested.flatMap((result) => result.ids), ...buildIdArray(childEntitlements.data.data)])] }
     }
 
-    private async getParentEntitlementIds(apiConfig: Configuration, entitlementId: string | undefined): Promise<HierarchyIdsResult> {
-        if (!entitlementId) {
+    /** Collects all ancestor ids. `visited` stops circular group nesting from recursing forever. */
+    private async getParentEntitlementIds(
+        apiConfig: Configuration,
+        entitlementId: string | undefined,
+        visited: Set<string> = new Set()
+    ): Promise<HierarchyIdsResult> {
+        if (!entitlementId || visited.has(entitlementId)) {
             return { ids: [] }
         }
+        visited.add(entitlementId)
 
         const entitlementsApi = new EntitlementsApi(apiConfig)
         const request = { id: entitlementId }
@@ -190,7 +202,7 @@ export class EntitlementHierarchyService {
         }
 
         const nested = await Promise.all(
-            parentEntitlements.data.data.map((parent) => this.getParentEntitlementIds(apiConfig, parent.id))
+            parentEntitlements.data.data.map((parent) => this.getParentEntitlementIds(apiConfig, parent.id, visited))
         )
         const nestedError = nested.find((result) => result.error)?.error
         if (nestedError) {

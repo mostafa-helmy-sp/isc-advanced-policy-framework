@@ -1,4 +1,3 @@
-import { logger } from '@sailpoint/connector-sdk'
 import {
     Campaign2AllOfSearchCampaignInfoReviewer,
     Configuration,
@@ -24,6 +23,7 @@ import { SearchService } from './services/search-service'
 import { SodPolicyService } from './services/sod-policy-service'
 import { PolicyAction, PolicyType } from './types/enums'
 import { buildEntitlementNameArray, buildNameArray } from './utils/api-helper'
+import { logger, runWithPolicyLogger } from './utils/logger'
 import { parsePolicyLevel } from './utils/owner-parser'
 
 export { PolicyAction, PolicyType } from './types/enums'
@@ -99,28 +99,42 @@ export class IscClient {
     /**
      * Processes a single SOD policy configuration: resolves entitlements, creates or updates
      * the policy, optionally schedules reports and certification campaigns.
+     * Every line logged while processing carries the policy name.
      */
     async processSodPolicyConfig(policyConfig: PolicyConfig, apiConfig?: Configuration): Promise<PolicyImpl> {
+        return runWithPolicyLogger(policyConfig.policyName, () => this.processPolicy(policyConfig, apiConfig))
+    }
+
+    private async processPolicy(policyConfig: PolicyConfig, apiConfig?: Configuration): Promise<PolicyImpl> {
         logger.info(`### Processing policy [${policyConfig.policyName}] ###`)
 
         const errorMessages: string[] = []
         const policyImpl = new PolicyImpl(policyConfig.policyName)
-        const activeApiConfig = apiConfig ?? (this.settings.parallelProcessing ? createApiConfig(this.config) : this.apiConfig)
-
-        if (policyConfig.actions.includes(PolicyAction.DELETE_ALL)) {
-            await this.handleDeletePolicy(activeApiConfig, policyConfig, policyImpl, errorMessages)
-        } else {
-            const processed = await this.handlePolicyUpsert(activeApiConfig, policyConfig, policyImpl, errorMessages)
-            if (!processed) {
-                policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
-                return policyImpl
+        try {
+            const activeApiConfig =
+                apiConfig ?? (this.settings.parallelProcessing ? createApiConfig(this.config) : this.apiConfig)
+            if (policyConfig.actions.includes(PolicyAction.DELETE_ALL)) {
+                await this.handleDeletePolicy(activeApiConfig, policyConfig, policyImpl, errorMessages)
+                await this.handleDeleteCampaign(activeApiConfig, policyConfig, policyImpl, errorMessages)
+            } else if (await this.handlePolicyUpsert(activeApiConfig, policyConfig, policyImpl, errorMessages)) {
+                await this.handleDeleteCampaign(activeApiConfig, policyConfig, policyImpl, errorMessages)
             }
+        } catch (error) {
+            logger.error(error, 'Unexpected error while processing policy')
+            errorMessages.push(
+                `Unexpected error while processing policy: ${error instanceof Error ? error.message : String(error)}`
+            )
         }
 
-        await this.handleDeleteCampaign(activeApiConfig, policyConfig, policyImpl, errorMessages)
-
-        logger.info(`### Finished processing policy [${policyConfig.policyName}] ###`)
         policyImpl.attributes.errorMessages = JSON.stringify(errorMessages)
+        if (errorMessages.length > 0) {
+            logger.warn(
+                { errorMessages },
+                `### Finished processing policy [${policyConfig.policyName}] with ${errorMessages.length} error(s) ###`
+            )
+        } else {
+            logger.info(`### Finished processing policy [${policyConfig.policyName}] ###`)
+        }
         return policyImpl
     }
 
@@ -161,11 +175,11 @@ export class IscClient {
 
         if (query1Result.error) {
             canProcess = false
-            errorMessages.push(query1Result.error)
+            errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}]: ${query1Result.error}`)
         }
         if (query2Result.error) {
             canProcess = false
-            errorMessages.push(query2Result.error)
+            errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}]: ${query2Result.error}`)
         }
 
         let query1Entitlements = query1Result.items
@@ -178,13 +192,13 @@ export class IscClient {
             ])
             if (hierarchy1.error) {
                 canProcess = false
-                errorMessages.push(hierarchy1.error)
+                errorMessages.push(`Entitlement Query 1 [${policyConfig.query1}]: ${hierarchy1.error}`)
             } else {
                 query1Entitlements = hierarchy1.items
             }
             if (hierarchy2.error) {
                 canProcess = false
-                errorMessages.push(hierarchy2.error)
+                errorMessages.push(`Entitlement Query 2 [${policyConfig.query2}]: ${hierarchy2.error}`)
             } else {
                 query2Entitlements = hierarchy2.items
             }
@@ -225,7 +239,9 @@ export class IscClient {
 
         if (policyOwnerResult.error) {
             canProcess = false
-            errorMessages.push(policyOwnerResult.error)
+            errorMessages.push(
+                `Policy Owner [${policyConfig.policyOwnerType}: ${policyConfig.policyOwner}]: ${policyOwnerResult.error}`
+            )
         } else if (!policyOwner) {
             canProcess = false
             errorMessages.push(
@@ -235,7 +251,9 @@ export class IscClient {
 
         if (violationOwnerResult.error) {
             canProcess = false
-            errorMessages.push(violationOwnerResult.error)
+            errorMessages.push(
+                `Violation Owner [${policyConfig.violationOwnerType}: ${policyConfig.violationOwner}]: ${violationOwnerResult.error}`
+            )
         } else if (
             !violationOwner &&
             policyConfig.violationOwnerType !== ViolationOwnerAssignmentConfigAssignmentRuleEnum.Manager
@@ -354,10 +372,10 @@ export class IscClient {
             this.searchService.searchAccessProfilesByEntitlements(apiConfig, query2Entitlements),
         ])
         if (query1AccessProfilesResult.error) {
-            errorMessages.push(query1AccessProfilesResult.error)
+            errorMessages.push(`Query 1 access profile lookup: ${query1AccessProfilesResult.error}`)
         }
         if (query2AccessProfilesResult.error) {
-            errorMessages.push(query2AccessProfilesResult.error)
+            errorMessages.push(`Query 2 access profile lookup: ${query2AccessProfilesResult.error}`)
         }
 
         const query1AccessProfiles = query1AccessProfilesResult.items
@@ -368,10 +386,10 @@ export class IscClient {
             this.searchService.searchRolesByAccessProfilesOrEntitlements(apiConfig, query2Entitlements, query2AccessProfiles),
         ])
         if (query1RolesResult.error) {
-            errorMessages.push(query1RolesResult.error)
+            errorMessages.push(`Query 1 role lookup: ${query1RolesResult.error}`)
         }
         if (query2RolesResult.error) {
-            errorMessages.push(query2RolesResult.error)
+            errorMessages.push(`Query 2 role lookup: ${query2RolesResult.error}`)
         }
 
         const query1Roles = query1RolesResult.items

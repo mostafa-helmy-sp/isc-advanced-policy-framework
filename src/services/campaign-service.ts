@@ -12,7 +12,7 @@ import {
     ViolationOwnerAssignmentConfigAssignmentRuleEnum,
 } from '../types/sailpoint-api'
 import { PolicyConfig } from '../model/policy-config'
-import { executeWithRetry, wrapApiCallResult, wrapApiMutation } from '../utils/api-helper'
+import { wrapApiCallResult, wrapApiMutation } from '../utils/api-helper'
 
 export interface FindCampaignResult {
     campaign?: CampaignTemplate
@@ -90,16 +90,15 @@ export class CampaignService {
             },
         }
 
-        try {
-            const newCampaign = await executeWithRetry(
-                () => certsApi.createCampaignTemplateV1(request),
-                'Error creating new Campaign using Certification-Campaigns API'
-            )
-            return ['', newCampaign.data.id ?? '']
-        } catch (error) {
-            const errorMessage = `Error creating new Campaign using Certification-Campaigns API: ${error instanceof Error ? error.message : error}`
-            return [errorMessage, '']
+        const newCampaign = await wrapApiCallResult(
+            () => certsApi.createCampaignTemplateV1(request).then((r) => r.data),
+            'Error creating new Campaign using Certification-Campaigns API',
+            request
+        )
+        if (!newCampaign.ok) {
+            return [newCampaign.error, '']
         }
+        return ['', newCampaign.data.id ?? '']
     }
 
     async updatePolicyCampaign(

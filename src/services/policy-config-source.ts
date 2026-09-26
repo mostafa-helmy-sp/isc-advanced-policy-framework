@@ -1,5 +1,6 @@
-import { ConnectorError, logger } from '@sailpoint/connector-sdk'
+import { ConnectorError } from '@sailpoint/connector-sdk'
 import { AccountsApi, Account, Paginator, SourcesApi, Configuration } from '../types/sailpoint-api'
+import { logger } from '../utils/logger'
 
 export class PolicyConfigSourceService {
     private policyConfigSourceId?: string

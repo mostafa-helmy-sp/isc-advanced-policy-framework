@@ -3,7 +3,6 @@ import {
     createConnector,
     readConfig,
     Response,
-    logger,
     StdAccountListOutput,
     StdAccountReadInput,
     StdAccountReadOutput,
@@ -18,6 +17,8 @@ import { IscClient, PolicyType } from './isc-client'
 import { PolicyConfig, toPolicyConfigAccount } from './model/policy-config'
 import { PolicyImpl } from './model/policy-impl'
 import { runWithConcurrencyLimit } from './utils/concurrency-pool'
+import { withKeepAlive } from './utils/keep-alive'
+import { logger } from './utils/logger'
 
 async function processPolicyConfigs(
     policyConfigObjects: Account[],
@@ -61,18 +62,22 @@ export const connector = async () => {
             res.send({})
         })
         .stdAccountList(async (_context: Context, _input: StdAccountListInput, res: Response<StdAccountListOutput>) => {
-            const policyConfigs = await iscClient.getAllPolicyConfigs()
-            logger.info(`stdAccountList found ${policyConfigs.length} policies to process`)
-            await processPolicyConfigs(policyConfigs, iscClient, iscClient.isParallelProcessing(), res)
+            await withKeepAlive(res, async () => {
+                const policyConfigs = await iscClient.getAllPolicyConfigs()
+                logger.info(`stdAccountList found ${policyConfigs.length} policies to process`)
+                await processPolicyConfigs(policyConfigs, iscClient, iscClient.isParallelProcessing(), res)
+            })
         })
         .stdAccountRead(async (_context: Context, input: StdAccountReadInput, res: Response<StdAccountReadOutput>) => {
-            logger.info(`stdAccountRead read account : ${input.identity}`)
-            const account = await iscClient.getAccount(input.identity)
-            if (account) {
-                res.send(account)
-            } else {
-                logger.debug(`stdAccountRead could not find account : ${input.identity}`)
-                res.send({ identity: input.identity, attributes: {} })
-            }
+            await withKeepAlive(res, async () => {
+                logger.info(`stdAccountRead read account : ${input.identity}`)
+                const account = await iscClient.getAccount(input.identity)
+                if (account) {
+                    res.send(account)
+                } else {
+                    logger.debug(`stdAccountRead could not find account : ${input.identity}`)
+                    res.send({ identity: input.identity, attributes: {} })
+                }
+            })
         })
 }

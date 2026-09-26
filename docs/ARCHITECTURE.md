@@ -36,9 +36,19 @@ Generic CSV Source (policy rows as accounts)
 
 ## Parallel processing
 
-When `parallelProcessing` is enabled, policies are processed concurrently up to `maxConcurrentPolicies` (default 3). Each active policy receives its own SDK `Configuration` instance to reduce OAuth token contention and 429 rate-limit errors during large batch runs.
+When `parallelProcessing` is enabled, policies are processed concurrently up to `maxConcurrentPolicies` (default 3). Each active policy receives its own SDK `Configuration` instance and OAuth token. ISC rate-limits per OAuth client, so all policies still share one request budget.
 
 Within each policy, independent API calls (entitlement queries, owner resolution, access profile and role searches) run in parallel where safe.
+
+## HTTP retries
+
+Every SDK API class uses the axios instance created in [`src/api/axios-handlers.ts`](../src/api/axios-handlers.ts), assigned to `Configuration.axiosInstance`. Its interceptors run before the SDK converts errors, so they can see the raw HTTP status and `Retry-After` header. See [Rate limiting and retries](CONFIGURATION.md#rate-limiting-and-retries) for the rules.
+
+## Logging
+
+Lines logged while a policy is processed include a `policyName` field, carried across async work by `AsyncLocalStorage` ([`src/utils/logger.ts`](../src/utils/logger.ts)). This holds in parallel mode and inside retries. Command-level lines and the SDK `Paginator`'s own `console.log` output do not include it.
+
+Each policy ends with a `### Finished processing policy ###` line, logged at WARN with the policy's `errorMessages` when it has any, so the log and the output report always match.
 
 ## Caching
 
@@ -54,7 +64,9 @@ Large entitlement or access profile ID lists are split into batches of 50 IDs pe
 |------|----------------|
 | `src/index.ts` | Connector SDK entry point |
 | `src/isc-client.ts` | Orchestrates policy processing workflow |
+| `src/api/` | SDK configuration and the retrying axios instance |
 | `src/services/` | ISC API service classes |
+| `src/utils/` | Policy-scoped logger, keepAlive, API and concurrency helpers |
 | `src/builders/` | Pure schedule and access-constraint builders |
 | `src/config/` | Connector settings and defaults |
 | `src/types/sailpoint-api.ts` | SDK v2 import barrel |

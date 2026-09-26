@@ -66,7 +66,7 @@ export class OwnerResolverService {
         const refs: SodPolicySecondaryOwnerRefsInner[] = []
         for (const { entry, result } of resolvedEntries) {
             if (result.error) {
-                errors.push(result.error)
+                errors.push(`Co-Owner [${entry.type}: ${entry.value}]: ${result.error}`)
                 continue
             }
             if (!result.owner) {

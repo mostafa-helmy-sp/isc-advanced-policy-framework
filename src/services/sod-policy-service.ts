@@ -14,7 +14,7 @@ import {
     ViolationOwnerAssignmentConfig,
 } from '../types/sailpoint-api'
 import { PolicyConfig } from '../model/policy-config'
-import { executeWithRetry, wrapApiCallResult, wrapApiMutation } from '../utils/api-helper'
+import { wrapApiCallResult, wrapApiMutation } from '../utils/api-helper'
 
 export interface FindPolicyResult {
     policy?: SodPolicy
@@ -81,16 +81,15 @@ export class SodPolicyService {
             },
         }
 
-        try {
-            const newPolicy = await executeWithRetry(
-                () => policyApi.createSodPolicyV1(request),
-                'Error creating a new Policy using SOD-Policies API'
-            )
-            return ['', newPolicy.data.id ?? '', newPolicy.data.policyQuery ?? '']
-        } catch (error) {
-            const errorMessage = `Error creating a new Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
-            return [errorMessage, '', '']
+        const newPolicy = await wrapApiCallResult(
+            () => policyApi.createSodPolicyV1(request).then((r) => r.data),
+            'Error creating a new Policy using SOD-Policies API',
+            request
+        )
+        if (!newPolicy.ok) {
+            return [newPolicy.error, '', '']
         }
+        return ['', newPolicy.data.id ?? '', newPolicy.data.policyQuery ?? '']
     }
 
     async updatePolicy(
@@ -123,16 +122,15 @@ export class SodPolicyService {
             ],
         }
 
-        try {
-            const patchedPolicy = await executeWithRetry(
-                () => policyApi.patchSodPolicyV1(request),
-                'Error updating existing Policy using SOD-Policies API'
-            )
-            return ['', patchedPolicy.data.policyQuery ?? '']
-        } catch (error) {
-            const errorMessage = `Error updating existing Policy using SOD-Policies API: ${error instanceof Error ? error.message : error}`
-            return [errorMessage, '']
+        const patchedPolicy = await wrapApiCallResult(
+            () => policyApi.patchSodPolicyV1(request).then((r) => r.data),
+            'Error updating existing Policy using SOD-Policies API',
+            request
+        )
+        if (!patchedPolicy.ok) {
+            return [patchedPolicy.error, '']
         }
+        return ['', patchedPolicy.data.policyQuery ?? '']
     }
 
     async setPolicySchedule(

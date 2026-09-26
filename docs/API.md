@@ -41,9 +41,9 @@ Exact scope names depend on your tenant's OAuth client configuration. Use the IS
 
 ## Pagination and retry
 
-- List and search operations use the SDK `Paginator` helper (250 items per page by default).
-- HTTP 429 responses are retried up to 10 times in application code (`wrapApiCall` / `wrapApiMutation`), preferring the `Retry-After` header when present and otherwise using exponential backoff.
-- After retries are exhausted, the real API error is returned on the policy account `errorMessages` attribute (not collapsed into an empty entitlement query result). This applies to Search, owner/governance-group resolution, SOD policy lookup and mutations, certification campaign lookup and mutations, and entitlement hierarchy expansion.
+- List and search operations use the SDK `Paginator` helper (250 items per page by default). Its "Paginating call" lines are written by the SDK with `console.log` and do not include the policy name.
+- Retries happen per HTTP request, in axios interceptors on the SDK's `Configuration.axiosInstance`, so a 429 on one page retries only that page. See [Rate limiting and retries](CONFIGURATION.md#rate-limiting-and-retries) for the rules. The interceptors must run there: the SDK replaces axios errors with an `ApiError` that has no response headers, so code outside the SDK can't see `Retry-After`.
+- After retries are exhausted, the real API error (HTTP status, ISC message, and `trackingId` when present) is returned on the policy account `errorMessages` attribute, labelled with the query side or owner it belongs to. It is never collapsed into an empty entitlement query result; "returns no entitlements" is reported only when a search succeeds with zero results.
 
 ## Migration from V2025
 

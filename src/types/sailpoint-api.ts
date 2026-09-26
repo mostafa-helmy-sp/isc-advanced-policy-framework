@@ -7,7 +7,6 @@ export {
     AccountsApi,
     CertificationCampaignsApi,
     Configuration,
-    ConfigurationParameters,
     EntitlementsApi,
     GovernanceGroupsApi,
     Paginator,
@@ -15,6 +14,7 @@ export {
     SODPoliciesApi,
     SourcesApi,
 } from 'sailpoint-api-client'
+export type { ConfigurationParameters } from 'sailpoint-api-client'
 
 export type { Account } from 'sailpoint-api-client/dist/accounts/api'
 export type {
